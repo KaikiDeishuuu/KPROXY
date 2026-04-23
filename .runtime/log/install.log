@@ -1,0 +1,6 @@
+[2026-04-23 21:41:15] [ERROR] Preflight dependency check failed.
+[2026-04-23 21:41:15] [ERROR] Blocked: jq-dependent runtime validation/execution cannot run in this environment.
+[2026-04-23 22:00:17] [ERROR] Preflight dependency check failed.
+[2026-04-23 22:00:17] [ERROR] Blocked: jq-dependent runtime validation/execution cannot run in this environment.
+[2026-04-23 22:17:59] [ERROR] Preflight dependency check failed.
+[2026-04-23 22:17:59] [ERROR] Blocked: jq-dependent runtime validation/execution cannot run in this environment.

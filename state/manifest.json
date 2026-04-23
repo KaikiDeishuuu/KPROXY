@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "project": "proxy-stack",
+    "version": "0.1.0",
+    "schema_version": 1,
+    "created_at": "",
+    "updated_at": ""
+  },
+  "engines": {
+    "xray": {
+      "installed": false,
+      "version": "",
+      "binary": "xray",
+      "service": "proxy-stack-xray",
+      "config_path": "/etc/proxy-stack/xray.json"
+    },
+    "singbox": {
+      "installed": false,
+      "version": "",
+      "binary": "sing-box",
+      "service": "proxy-stack-singbox",
+      "config_path": "/etc/proxy-stack/singbox.json"
+    }
+  },
+  "stacks": [],
+  "inbounds": [],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct",
+      "enabled": true
+    },
+    {
+      "tag": "block",
+      "type": "block",
+      "enabled": true
+    },
+    {
+      "tag": "dns-out",
+      "type": "dns",
+      "enabled": true
+    }
+  ],
+  "routes": [
+    {
+      "name": "default-direct",
+      "priority": 1000,
+      "enabled": true,
+      "inbound_tag": [],
+      "domain_suffix": [],
+      "domain_keyword": [],
+      "ip_cidr": [],
+      "network": [],
+      "outbound": "direct"
+    }
+  ],
+  "forwardings": [],
+  "certificates": {},
+  "logs": {
+    "install_log": "/var/log/proxy-stack/install.log",
+    "xray_access": "/var/log/proxy-stack/xray-access.log",
+    "xray_error": "/var/log/proxy-stack/xray-error.log",
+    "singbox_log": "/var/log/proxy-stack/singbox.log",
+    "level": "warning",
+    "dns_log": false,
+    "mask_address": "quarter"
+  },
+  "exports": {
+    "output_dir": "./output",
+    "last_generated_at": "",
+    "items": []
+  }
+}
