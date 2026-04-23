@@ -1,93 +1,78 @@
-# Proxy Stack
+# Proxy Stack（中文优先说明）
 
-Modular Bash framework for long-term personal proxy maintenance on Linux servers.
+面向 Linux 服务器的模块化 Bash 代理维护框架，强调**可长期维护**、**状态可追踪**、**导出可复用**，适合个人/小规模自建场景。
 
-## Introduction
+> English note: A short English appendix is kept at the end for quick reference. Main documentation is Chinese-first.
 
-Proxy Stack is a shell-native, menu-driven framework with persistent manifest state, template-based rendering, engine lifecycle management, diagnostics, and export tooling. It is designed for maintainable personal operations, not for one-shot scripts or web panels.
+## 1. 项目简介
 
-## Supported Features
+Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）提供交互式菜单，将常见代理维护流程拆分到 `lib/*.sh` 模块。核心状态由 `state/manifest.json` 持久化管理，导出文件按时间戳写入 `output/`，避免覆盖旧结果。
 
-- Dual engines: xray-core and sing-box
-- Layered stack presets:
-  - VLESS-Vision-TLS
-  - VLESS-Vision-uTLS-REALITY
-  - VLESS-gRPC-uTLS-REALITY
-  - VLESS-Reality-XHTTP
-  - Shadowsocks 2022 (optional TLS mode)
-- VLESS SNI camouflage and uTLS fingerprint parameters in stack/outbound/export paths
-- Inbound/outbound/routing management
-- Forwarding split into dedicated module and entrypoint:
-  - `lib/forward.sh`
-  - `forward.sh`
-- ACME/manual certificate workflows
-- Share links, Base64 subscription, Clash.Meta, Xray client, sing-box client export
-- Initialized rules bundle generation for first-time subscription import:
-  - `custom_direct.yaml`
-  - `custom_proxy.yaml`
-  - `custom_reject.yaml`
-  - `lan.yaml`
-  - `default_rules.yaml`
-  - `README.md`
-- Diagnostic bundle and backup/restore workflows
-- Random-safe port assignment:
-  - custom input accepted
-  - Enter key auto-selects available port
-  - avoids occupied/listening ports and manifest collisions
+## 2. 功能特性
 
-## Prerequisites
+- 双引擎支持：`xray-core`、`sing-box`
+- 分层协议栈预设（VLESS / Shadowsocks 2022）
+- 入站、出站、路由、转发、证书、诊断、备份恢复
+- 订阅/导出能力：
+  - 分享链接（share links）
+  - Base64 订阅
+  - Clash Meta 客户端配置
+  - Xray 客户端配置
+  - sing-box 客户端配置
+  - 初始化规则包（首次导入友好）
+  - 客户端配置 + 初始化规则包（组合导出）
+  - 本地代理路由模板导出
+- 输出目录使用时间戳子目录（保守覆盖策略）
 
-Required commands:
+## 3. 支持的协议栈
 
-- `bash`
-- `jq`
-- `curl`
-- `openssl`
-- `tar`
-- `sed`
-- `awk`
-- `grep`
+当前预设包括（以菜单与代码实现为准）：
 
-Recommended commands:
+- VLESS-Vision-TLS
+- VLESS-Vision-uTLS-REALITY
+- VLESS-gRPC-uTLS-REALITY
+- VLESS-Reality-XHTTP
+- Shadowsocks 2022（可选 TLS）
 
-- `systemctl`
-- `ss`
-- `journalctl`
-- `base64`
+## 4. 目录结构
 
-`jq` is a required runtime dependency. Manifest operations and most management paths are jq-driven.
+```text
+.
+├── install.sh
+├── forward.sh
+├── lib/
+│   ├── stack.sh
+│   ├── inbound.sh
+│   ├── outbound.sh
+│   ├── route.sh
+│   ├── subscribe.sh
+│   ├── cert.sh
+│   ├── forward.sh
+│   ├── diagnostic.sh
+│   ├── backup.sh
+│   └── ...
+├── templates/
+│   ├── clash/
+│   ├── xray/
+│   ├── singbox/
+│   ├── rules/
+│   └── systemd/
+├── state/
+│   └── manifest.json
+├── output/
+└── backups/
+```
 
-## Installation Examples
+## 5. 安装方式
 
-### Main Framework Install (Remote One-Line)
+### 5.1 一键安装命令（远程）
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
   --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 ```
 
-### Framework Upgrade/Update (Remote)
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
-  --upgrade --install-dir "$HOME/proxy-stack" \
-  --gh-user <user> --gh-repo <repo> --gh-branch <branch>
-```
-
-### Forwarding-Specific Setup Path
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
-  --mode forward --gh-user <user> --gh-repo <repo> --gh-branch <branch>
-```
-
-After local bootstrap, forwarding can also be launched directly:
-
-```bash
-bash "$HOME/proxy-stack/forward.sh"
-```
-
-### Local Clone + Manual Install Path
+### 5.2 Git clone 安装（本地）
 
 ```bash
 git clone https://github.com/<user>/<repo>.git
@@ -96,21 +81,139 @@ chmod +x install.sh forward.sh
 bash install.sh
 ```
 
-## Upgrade Notes
+## 6. 升级方式
 
-- Re-running the remote installer with `--upgrade` updates scripts/templates.
-- Existing manifest state under `state/manifest.json` is preserved.
+远程升级：
 
-## Initialized Rules Bundle Workflow
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
+  --upgrade --install-dir "$HOME/proxy-stack" \
+  --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+```
 
-Subscription/export workflow now supports initialized routing bundle output for first-time clients.
+说明：升级会同步脚本与模板，`state/manifest.json` 会保留。
 
-Menu path:
+## 7. 卸载/清理说明
 
-- `Subscriptions and Export -> Export initialized rules bundle`
-- `Subscriptions and Export -> Export client config + initialized rules bundle`
+```bash
+# 1) 停服务（若已安装）
+sudo systemctl stop proxy-stack-xray proxy-stack-singbox 2>/dev/null || true
 
-Export outputs use versioned directories under `output/` to avoid blind overwrite, for example:
+# 2) 删除 systemd 单元（若存在）
+sudo rm -f /etc/systemd/system/proxy-stack-xray.service
+sudo rm -f /etc/systemd/system/proxy-stack-singbox.service
+sudo systemctl daemon-reload
+
+# 3) 删除项目目录
+rm -rf "$HOME/proxy-stack"
+```
+
+## 8. 交互式菜单说明
+
+主菜单路径：
+
+- Stack Management
+- Inbound Management
+- Outbounds and Routing
+- Certificates and Domains
+- Subscriptions and Export
+- Logs and Diagnostics
+- Engines and Services
+- Backup and Restore
+
+订阅/导出子菜单（当前实现）：
+
+1. Generate share links
+2. Generate Base64 subscription
+3. Export Clash.Meta
+4. Export Xray client config
+5. Export sing-box client config
+6. Export initialized rules bundle
+7. Export client config + initialized rules bundle
+8. Export local proxy templates with routing
+
+## 9. 订阅与导出说明
+
+导出统一由 `lib/subscribe.sh` 负责，所有输出写入 `output/<label>-<timestamp>/`：
+
+- 分享链接：`subscriptions/all.txt`
+- Base64：`subscriptions/all.b64.txt`
+- Clash Meta：`clash/config.yaml`
+- Xray：`xray/client.json` 与 `xray/client-<stack_id>.json`
+- sing-box：`singbox/client.json` 与 `singbox/client-<stack_id>.json`
+- 规则包：`rules/*`，并镜像到 `clash/rules/*`
+- 本地路由模板：`local-proxy-routing-template.md`
+
+### 组合导出工作流
+
+选择 `Export client config + initialized rules bundle` 后，会在同一目录内依次尝试导出上述各类文件；若部分步骤失败会明确提示失败步骤，不会伪装全部成功。
+
+## 10. 初始化规则配置说明
+
+初始化规则包包含：
+
+- `custom_direct.yaml`
+- `custom_proxy.yaml`
+- `custom_reject.yaml`
+- `lan.yaml`
+- `default_rules.yaml`
+- `README.md`
+
+设计理念：**保守初始化（conservative default）**。先保证可用和可解释，再逐步加规则，不鼓励一次性加过宽规则。
+
+⚠️ 注意：不建议直接使用过宽通配规则（例如 `+.microsoft.com`），容易误伤业务与更新通道。建议先按实际域名/网段逐步补充。
+
+## 11. 转发/链式代理说明
+
+转发能力是独立入口：
+
+- 安装时直接转发模式：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
+  --mode forward --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+```
+
+- 本地安装后启动转发入口：
+
+```bash
+bash "$HOME/proxy-stack/forward.sh"
+```
+
+转发模块路径：`lib/forward.sh`。
+
+## 12. 证书与自动续费说明
+
+证书菜单提供：
+
+- 列出现有证书
+- ACME 申请
+- 手工证书安装
+- 自动续期配置
+- 续期测试
+- SNI / REALITY 参数管理
+
+对于 VLESS 相关配置，建议明确设置并校验：
+
+- `SNI`（服务名）
+- `fingerprint`（uTLS 指纹，如 `chrome`）
+
+以上参数会影响导出链接与客户端配置匹配性。
+
+## 13. 日志与诊断说明
+
+日志/诊断菜单支持：
+
+- 查看安装日志、服务日志、访问日志、错误日志
+- 调整日志级别
+- DNS 日志开关
+- 日志轮转配置
+- 导出诊断包
+- 实时 tail
+
+默认根用户模式日志目录：`/var/log/proxy-stack/`。
+
+## 14. 输出目录结构示例
 
 ```text
 output/client-rules-bundle-20260101-120000/
@@ -132,134 +235,35 @@ output/client-rules-bundle-20260101-120000/
 ├── singbox/
 │   ├── client.json
 │   └── client-<stack_id>.json
-└── rules/
-  ├── custom_direct.yaml
-  ├── custom_proxy.yaml
-  ├── custom_reject.yaml
-  ├── lan.yaml
-  ├── default_rules.yaml
-  └── README.md
+├── rules/
+│   ├── custom_direct.yaml
+│   ├── custom_proxy.yaml
+│   ├── custom_reject.yaml
+│   ├── lan.yaml
+│   ├── default_rules.yaml
+│   └── README.md
+└── local-proxy-routing-template.md
 ```
 
-Default diversion chain:
+## 15. 常见注意事项
 
-- LAN/private traffic -> DIRECT
-- CN domain/IP -> DIRECT
-- custom_reject -> REJECT/BLOCK
-- custom_direct -> DIRECT
-- custom_proxy -> PROXY
-- fallback -> PROXY
+- 本项目依赖 `jq`，缺失时会明确报错并退出。
+- 不要伪造验证结果：无法执行的检查必须说明原因。
+- 若当前没有启用的 VLESS 栈，Xray/sing-box 客户端导出会失败（这是预期保护行为）。
+- `output/` 为历史产物目录，建议按时间定期清理。
 
-Engine behavior:
+## 16. TODO / 后续规划
 
-- Clash.Meta directly references generated rule files in `clash/rules/`.
-- Xray/sing-box client exports include embedded default fallback routing and also export standalone rules for manual extension.
+- TODO：在具备 `shellcheck` 环境时补充标准化 lint 基线。
+- TODO：补充非 Linux / BusyBox 下 `base64` 参数差异兼容处理（当前默认 GNU `base64 -w 0`）。
+- TODO：为导出流程增加更细粒度摘要（成功/失败计数与建议修复提示）。
 
-## Uninstall Notes
+---
 
-This scaffold does not force-delete runtime state automatically. Recommended manual cleanup:
+## English Appendix (brief)
 
-```bash
-# stop services first if installed
-sudo systemctl stop proxy-stack-xray proxy-stack-singbox 2>/dev/null || true
-
-# remove systemd units if present
-sudo rm -f /etc/systemd/system/proxy-stack-xray.service
-sudo rm -f /etc/systemd/system/proxy-stack-singbox.service
-sudo systemctl daemon-reload
-
-# remove project directory
-rm -rf "$HOME/proxy-stack"
-```
-
-## Forwarding Usage
-
-Forwarding is implemented in dedicated module/script path and integrated with shared manifest/logging:
-
-- module: `lib/forward.sh`
-- entrypoint: `forward.sh`
-- installer mode: `install.sh --mode forward`
-
-Forwarding creation includes interactive port handling with Enter-for-random behavior.
-
-## Runtime Constraint Handling (`jq` Missing)
-
-### Design-time implementation
-
-- Project intentionally depends on `jq`.
-- Manifest read/write, route/export/render paths are jq-based.
-- Code includes preflight checks and explicit failure messages for missing jq.
-
-### Runtime behavior when jq is absent
-
-- Installer preflight fails clearly and exits non-zero.
-- jq-dependent runtime validation/execution is blocked by design.
-- The framework does not fake successful execution.
-
-### Expected output example (not confirmed execution result)
-
-```text
-========================================
- Dependency Check
-========================================
-[MISSING] jq (required for manifest/state runtime)
-[OK] curl
-...
-[ERROR] Preflight dependency check failed.
-[ERROR] Blocked: jq-dependent runtime validation/execution cannot run in this environment.
-Remediation (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y jq
-```
-
-### Debian/Ubuntu jq remediation
-
-```bash
-sudo apt-get update && sudo apt-get install -y jq
-```
-
-## Directory Layout
-
-```text
-.
-├── install.sh
-├── forward.sh
-├── README.md
-├── lib/
-│   ├── backup.sh
-│   ├── cert.sh
-│   ├── common.sh
-│   ├── crypto.sh
-│   ├── diagnostic.sh
-│   ├── forward.sh
-│   ├── inbound.sh
-│   ├── logger.sh
-│   ├── outbound.sh
-│   ├── render.sh
-│   ├── route.sh
-│   ├── singbox.sh
-│   ├── stack.sh
-│   ├── subscribe.sh
-│   ├── systemd.sh
-│   ├── ui.sh
-│   └── xray.sh
-├── templates/
-│   ├── clash/
-│   ├── rules/
-│   ├── singbox/
-│   ├── systemd/
-│   └── xray/
-├── state/
-│   └── manifest.json
-├── output/
-└── backups/
-```
-
-## Log Locations
-
-Default root mode paths:
-
-- install: `/var/log/proxy-stack/install.log`
-- xray access: `/var/log/proxy-stack/xray-access.log`
-- xray error: `/var/log/proxy-stack/xray-error.log`
-- sing-box: `/var/log/proxy-stack/singbox.log`
-
-Non-root fallback paths are under `.runtime/log/` in the project directory.
+- Main entry: `install.sh`
+- Forwarding entry: `forward.sh`
+- Export menu includes share links, Base64, Clash.Meta, Xray client, sing-box client, initialized rules bundle, combined export.
+- Outputs are timestamped under `output/` to avoid blind overwrite.
+- `jq` is required at runtime; missing dependency is treated as a hard error.
