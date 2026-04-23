@@ -3,10 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PS_BOOTSTRAP_INSTALL_DIR="${PS_BOOTSTRAP_INSTALL_DIR:-${HOME}/proxy-stack}"
+PS_BOOTSTRAP_INSTALL_DIR="${PS_BOOTSTRAP_INSTALL_DIR:-}"
+PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=0
 PS_BOOTSTRAP_GH_USER="${PS_BOOTSTRAP_GH_USER:-<user>}"
 PS_BOOTSTRAP_GH_REPO="${PS_BOOTSTRAP_GH_REPO:-<repo>}"
 PS_BOOTSTRAP_GH_BRANCH="${PS_BOOTSTRAP_GH_BRANCH:-<branch>}"
+PS_BOOTSTRAP_LAUNCHER_PATH="${PS_BOOTSTRAP_LAUNCHER_PATH:-}"
+PS_LOCAL_REPO_MODE=0
 PS_MODE="${PS_MODE:-main}"
 PS_BOOTSTRAP_ONLY=0
 PS_REMOTE_UPGRADE=0
@@ -27,6 +30,12 @@ Options:
   --upgrade                  Upgrade existing bootstrap install in --install-dir
   -h, --help                 Show this help message
 
+Subcommands:
+  update                     Sync latest scripts/templates to current install dir
+  export                     One-shot export: client config + initialized rules bundle
+  doctor                     Run dependency preflight checks
+  logs                       View installation log
+
 Remote install example:
   bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh)
 
@@ -42,6 +51,7 @@ ps_cli_parse_args() {
         shift
         [[ $# -gt 0 ]] || { printf "Missing value for --install-dir\n" >&2; exit 2; }
         PS_BOOTSTRAP_INSTALL_DIR="$1"
+        PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=1
         ;;
       --gh-user)
         shift
@@ -104,13 +114,66 @@ ps_bootstrap_validate_repo_meta() {
   fi
 }
 
+ps_bootstrap_resolve_paths() {
+  local launcher_lib="${SCRIPT_DIR}/lib/launcher.sh"
+  if [[ -f "${launcher_lib}" ]]; then
+    # shellcheck source=lib/launcher.sh
+    source "${launcher_lib}"
+  fi
+
+  if [[ "${PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT}" -eq 1 ]]; then
+    : "${PS_BOOTSTRAP_INSTALL_DIR:?}"
+  elif [[ "${PS_LOCAL_REPO_MODE}" -eq 1 ]]; then
+    PS_BOOTSTRAP_INSTALL_DIR="${SCRIPT_DIR}"
+  elif declare -F ps_launcher_resolve_install_dir >/dev/null 2>&1; then
+    PS_BOOTSTRAP_INSTALL_DIR="$(ps_launcher_resolve_install_dir "")"
+  elif [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    PS_BOOTSTRAP_INSTALL_DIR="/opt/kprxy"
+  else
+    PS_BOOTSTRAP_INSTALL_DIR="${HOME}/.local/share/kprxy"
+  fi
+
+  if [[ -n "${PS_BOOTSTRAP_LAUNCHER_PATH}" ]]; then
+    return 0
+  fi
+
+  if declare -F ps_launcher_resolve_launcher_path >/dev/null 2>&1; then
+    PS_BOOTSTRAP_LAUNCHER_PATH="$(ps_launcher_resolve_launcher_path "")"
+  elif [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    PS_BOOTSTRAP_LAUNCHER_PATH="/usr/local/bin/kprxy"
+  else
+    PS_BOOTSTRAP_LAUNCHER_PATH="${HOME}/.local/bin/kprxy"
+  fi
+}
+
+ps_bootstrap_install_launcher() {
+  local launcher_lib="${PS_BOOTSTRAP_INSTALL_DIR}/lib/launcher.sh"
+  if [[ ! -f "${launcher_lib}" ]]; then
+    ps_bootstrap_error "Missing launcher helper: ${launcher_lib}"
+    return 1
+  fi
+
+  # shellcheck source=lib/launcher.sh
+  source "${launcher_lib}"
+  ps_launcher_install "${PS_BOOTSTRAP_INSTALL_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}" "install.sh"
+  ps_launcher_verify "${PS_BOOTSTRAP_LAUNCHER_PATH}" || {
+    ps_bootstrap_error "Launcher verification failed: ${PS_BOOTSTRAP_LAUNCHER_PATH}"
+    return 1
+  }
+
+  ps_launcher_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+  ps_launcher_print_success "${PS_BOOTSTRAP_INSTALL_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+}
+
 ps_bootstrap_sync_repo() {
   local source_dir="${1}"
+  ps_bootstrap_resolve_paths
 
   local required_paths=(
     "install.sh"
     "forward.sh"
     "lib/common.sh"
+    "lib/launcher.sh"
     "templates/xray/base.json.tpl"
     "templates/singbox/base.json.tpl"
     "state/manifest.json"
@@ -155,6 +218,7 @@ ps_bootstrap_from_github() {
   ps_bootstrap_require_cmd find || return 2
 
   ps_bootstrap_validate_repo_meta || return 2
+  ps_bootstrap_resolve_paths
 
   local archive_url="https://codeload.github.com/${PS_BOOTSTRAP_GH_USER}/${PS_BOOTSTRAP_GH_REPO}/tar.gz/${PS_BOOTSTRAP_GH_BRANCH}"
   local tmpdir
@@ -197,6 +261,7 @@ ps_bootstrap_from_github() {
 
   rm -rf "${tmpdir}"
   ps_bootstrap_info "Project files synced to ${PS_BOOTSTRAP_INSTALL_DIR}"
+  ps_bootstrap_install_launcher || return 2
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
     ps_bootstrap_info "Bootstrap-only mode completed."
@@ -228,11 +293,15 @@ if [[ ! -f "${SCRIPT_DIR}/lib/common.sh" ]]; then
   ps_bootstrap_from_github
   exit $?
 fi
+PS_LOCAL_REPO_MODE=1
+ps_bootstrap_resolve_paths
 
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/logger.sh
 source "${SCRIPT_DIR}/lib/logger.sh"
+# shellcheck source=lib/launcher.sh
+source "${SCRIPT_DIR}/lib/launcher.sh"
 # shellcheck source=lib/ui.sh
 source "${SCRIPT_DIR}/lib/ui.sh"
 # shellcheck source=lib/crypto.sh
@@ -575,9 +644,54 @@ ps_menu_backup_restore() {
   done
 }
 
+ps_handle_subcommand() {
+  local subcommand="${1:-}"
+  shift || true
+
+  case "${subcommand}" in
+    update)
+      if [[ "${#}" -gt 0 ]]; then
+        ps_ui_warn "Ignoring extra args for update: $*"
+      fi
+      PS_REMOTE_UPGRADE=1
+      PS_BOOTSTRAP_ONLY=1
+      ps_bootstrap_from_github
+      ;;
+    export)
+      ps_preflight_checks || return $?
+      ps_init_manifest
+      ps_sub_export_client_with_rules_bundle
+      ;;
+    doctor)
+      ps_preflight_checks
+      ;;
+    logs)
+      ps_preflight_checks || return $?
+      ps_init_manifest
+      ps_diag_view_install_log
+      ;;
+    *)
+      ps_ui_error "Unsupported subcommand: ${subcommand}"
+      printf "Supported subcommands: update, export, doctor, logs\n"
+      return 2
+      ;;
+  esac
+}
+
+ps_ensure_local_launcher() {
+  ps_bootstrap_resolve_paths
+  ps_launcher_install "${SCRIPT_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}" "install.sh"
+  if ! ps_launcher_verify "${PS_BOOTSTRAP_LAUNCHER_PATH}"; then
+    ps_ui_warn "Launcher verification failed: ${PS_BOOTSTRAP_LAUNCHER_PATH}"
+    return 1
+  fi
+  ps_launcher_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+}
+
 main() {
   ps_prepare_runtime_dirs
   ps_logger_init
+  ps_ensure_local_launcher || true
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
     ps_ui_info "Local repository mode detected, bootstrap-only flag has no effect."
@@ -589,7 +703,8 @@ main() {
   fi
 
   if [[ "${#PS_RUNTIME_ARGS[@]}" -gt 0 ]]; then
-    ps_ui_warn "Ignoring unsupported positional arguments: ${PS_RUNTIME_ARGS[*]}"
+    ps_handle_subcommand "${PS_RUNTIME_ARGS[0]}" "${PS_RUNTIME_ARGS[@]:1}"
+    return $?
   fi
 
   ps_preflight_checks || exit $?

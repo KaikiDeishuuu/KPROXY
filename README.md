@@ -48,6 +48,7 @@ Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）
 │   ├── subscribe.sh
 │   ├── cert.sh
 │   ├── forward.sh
+│   ├── launcher.sh
 │   ├── diagnostic.sh
 │   ├── backup.sh
 │   └── ...
@@ -65,6 +66,8 @@ Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）
 
 ## 5. 安装方式
 
+首次安装完成后，项目会自动写入可执行启动器 `kprxy`（优先 `/usr/local/bin/kprxy`，无 root 权限时回退 `~/.local/bin/kprxy`），后续不需要重复执行远程 `curl | bash`。
+
 ### 5.1 一键安装命令（远程）
 
 ```bash
@@ -72,7 +75,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/insta
   --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 ```
 
-### 5.2 Git clone 安装（本地）
+### 5.2 手动安装方式（Git clone）
 
 ```bash
 git clone https://github.com/<user>/<repo>.git
@@ -81,13 +84,34 @@ chmod +x install.sh forward.sh
 bash install.sh
 ```
 
-## 6. 升级方式
+### 5.3 安装后如何再次启动
 
-远程升级：
+```bash
+kprxy
+```
+
+支持参数透传（当前已接入）：
+
+```bash
+kprxy update
+kprxy export
+kprxy doctor
+kprxy logs
+```
+
+## 6. 更新方式
+
+推荐方式（已安装启动器后）：
+
+```bash
+kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+```
+
+或使用远程安装脚本升级：
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
-  --upgrade --install-dir "$HOME/proxy-stack" \
+  --upgrade \
   --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 ```
 
@@ -104,8 +128,16 @@ sudo rm -f /etc/systemd/system/proxy-stack-xray.service
 sudo rm -f /etc/systemd/system/proxy-stack-singbox.service
 sudo systemctl daemon-reload
 
-# 3) 删除项目目录
-rm -rf "$HOME/proxy-stack"
+# 3) 删除启动器（按你的安装模式选择）
+sudo rm -f /usr/local/bin/kprxy
+rm -f "$HOME/.local/bin/kprxy"
+
+# 4) 删除项目目录（按你的安装模式选择）
+sudo rm -rf /opt/kprxy /usr/local/share/kprxy
+rm -rf "$HOME/.local/share/kprxy"
+
+# 5) 可选：删除运行产物
+rm -rf "$HOME/.config/proxy-stack" "$HOME/.cache/proxy-stack"
 ```
 
 ## 8. 交互式菜单说明
@@ -177,7 +209,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/insta
 - 本地安装后启动转发入口：
 
 ```bash
-bash "$HOME/proxy-stack/forward.sh"
+kprxy --mode forward
 ```
 
 转发模块路径：`lib/forward.sh`。
