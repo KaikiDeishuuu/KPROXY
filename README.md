@@ -48,6 +48,7 @@ Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）
 │   ├── subscribe.sh
 │   ├── cert.sh
 │   ├── forward.sh
+│   ├── launcher.sh
 │   ├── diagnostic.sh
 │   ├── backup.sh
 │   └── ...
@@ -63,52 +64,56 @@ Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）
 └── backups/
 ```
 
-## 5. 安装方式
-
-### 5.1 一键安装命令（远程）
+## 5. 安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
+bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
+```
+
+## 6. 启动
+
+```bash
+kprxy
+```
+
+## 7. 更新
+
+```bash
+kprxy update
+```
+
+说明（简版）：
+- `kprxy update` 默认无需再传仓库参数。
+- 元数据解析顺序：显式参数 > `state/repo-meta.conf` > 内置默认值（`KaikiDeishuuu/KPROXY@main`）。
+- 查看当前元数据：`kprxy info`
+- 手动修复元数据：`kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>`
+
+## 8. 卸载
+
+```bash
+sudo rm -f /usr/local/bin/kprxy
+rm -f "$HOME/.local/bin/kprxy"
+sudo rm -rf /opt/kprxy /usr/local/share/kprxy
+rm -rf "$HOME/.local/share/kprxy"
+```
+
+## 9. 高级用法（可选覆盖仓库来源）
+
+```bash
+# 自定义仓库来源安装
+bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) \
   --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+
+# 自定义仓库来源更新
+kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 ```
 
-### 5.2 Git clone 安装（本地）
+## 10. PATH 提示说明（简版）
 
-```bash
-git clone https://github.com/<user>/<repo>.git
-cd <repo>
-chmod +x install.sh forward.sh
-bash install.sh
-```
+- 仅在需要时提示（例如 launcher 目录不在 PATH）。
+- 已提示过会记录标记，后续不会每次启动重复提示。
 
-## 6. 升级方式
-
-远程升级：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
-  --upgrade --install-dir "$HOME/proxy-stack" \
-  --gh-user <user> --gh-repo <repo> --gh-branch <branch>
-```
-
-说明：升级会同步脚本与模板，`state/manifest.json` 会保留。
-
-## 7. 卸载/清理说明
-
-```bash
-# 1) 停服务（若已安装）
-sudo systemctl stop proxy-stack-xray proxy-stack-singbox 2>/dev/null || true
-
-# 2) 删除 systemd 单元（若存在）
-sudo rm -f /etc/systemd/system/proxy-stack-xray.service
-sudo rm -f /etc/systemd/system/proxy-stack-singbox.service
-sudo systemctl daemon-reload
-
-# 3) 删除项目目录
-rm -rf "$HOME/proxy-stack"
-```
-
-## 8. 交互式菜单说明
+## 11. 交互式菜单说明
 
 主菜单路径：
 
@@ -132,7 +137,7 @@ rm -rf "$HOME/proxy-stack"
 7. Export client config + initialized rules bundle
 8. Export local proxy templates with routing
 
-## 9. 订阅与导出说明
+## 12. 订阅与导出说明
 
 导出统一由 `lib/subscribe.sh` 负责，所有输出写入 `output/<label>-<timestamp>/`：
 
@@ -148,7 +153,7 @@ rm -rf "$HOME/proxy-stack"
 
 选择 `Export client config + initialized rules bundle` 后，会在同一目录内依次尝试导出上述各类文件；若部分步骤失败会明确提示失败步骤，不会伪装全部成功。
 
-## 10. 初始化规则配置说明
+## 13. 初始化规则配置说明
 
 初始化规则包包含：
 
@@ -163,26 +168,25 @@ rm -rf "$HOME/proxy-stack"
 
 ⚠️ 注意：不建议直接使用过宽通配规则（例如 `+.microsoft.com`），容易误伤业务与更新通道。建议先按实际域名/网段逐步补充。
 
-## 11. 转发/链式代理说明
+## 14. 转发/链式代理说明
 
 转发能力是独立入口：
 
 - 安装时直接转发模式：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) \
-  --mode forward --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) --mode forward
 ```
 
 - 本地安装后启动转发入口：
 
 ```bash
-bash "$HOME/proxy-stack/forward.sh"
+kprxy --mode forward
 ```
 
 转发模块路径：`lib/forward.sh`。
 
-## 12. 证书与自动续费说明
+## 15. 证书与自动续费说明
 
 证书菜单提供：
 
@@ -200,7 +204,7 @@ bash "$HOME/proxy-stack/forward.sh"
 
 以上参数会影响导出链接与客户端配置匹配性。
 
-## 13. 日志与诊断说明
+## 16. 日志与诊断说明
 
 日志/诊断菜单支持：
 
@@ -213,7 +217,7 @@ bash "$HOME/proxy-stack/forward.sh"
 
 默认根用户模式日志目录：`/var/log/proxy-stack/`。
 
-## 14. 输出目录结构示例
+## 17. 输出目录结构示例
 
 ```text
 output/client-rules-bundle-20260101-120000/
@@ -245,14 +249,14 @@ output/client-rules-bundle-20260101-120000/
 └── local-proxy-routing-template.md
 ```
 
-## 15. 常见注意事项
+## 18. 常见注意事项
 
 - 本项目依赖 `jq`，缺失时会明确报错并退出。
 - 不要伪造验证结果：无法执行的检查必须说明原因。
 - 若当前没有启用的 VLESS 栈，Xray/sing-box 客户端导出会失败（这是预期保护行为）。
 - `output/` 为历史产物目录，建议按时间定期清理。
 
-## 16. TODO / 后续规划
+## 19. TODO / 后续规划
 
 - TODO：在具备 `shellcheck` 环境时补充标准化 lint 基线。
 - TODO：补充非 Linux / BusyBox 下 `base64` 参数差异兼容处理（当前默认 GNU `base64 -w 0`）。
