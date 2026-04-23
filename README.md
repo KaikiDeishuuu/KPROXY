@@ -97,6 +97,8 @@ kprxy update
 kprxy export
 kprxy doctor
 kprxy logs
+kprxy info
+kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 ```
 
 ## 6. 更新方式
@@ -104,7 +106,25 @@ kprxy logs
 推荐方式（已安装启动器后）：
 
 ```bash
-kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+kprxy update
+```
+
+`kprxy update` 的仓库元数据解析优先级：
+
+1. 显式 CLI 参数（`--gh-user/--gh-repo/--gh-branch`）
+2. 已持久化元数据（`state/repo-meta.conf`）
+3. 内置默认值（仅当不是 `<user>/<repo>/<branch>` 占位符）
+
+若三层都无法得到真实值，会明确失败并提示使用：
+
+```bash
+kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>
+```
+
+也可以查看当前状态：
+
+```bash
+kprxy info
 ```
 
 或使用远程安装脚本升级：
@@ -116,6 +136,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/insta
 ```
 
 说明：升级会同步脚本与模板，`state/manifest.json` 会保留。
+同时会刷新 `state/repo-meta.conf`（当仓库元数据可确定时）。
 
 ## 7. 卸载/清理说明
 
@@ -139,6 +160,12 @@ rm -rf "$HOME/.local/share/kprxy"
 # 5) 可选：删除运行产物
 rm -rf "$HOME/.config/proxy-stack" "$HOME/.cache/proxy-stack"
 ```
+
+## 7.1 PATH 提示策略（减少重复噪音）
+
+- 安装阶段：仅在启动器目录不在 PATH 时提示完整 PATH 配置建议。
+- 运行阶段：默认不重复提示；仅在确实检测到 `kprxy` 不可解析且此前未提示过时，给出简短提醒。
+- 项目通过状态标记文件抑制重复提示，避免每次启动都打印同一段 PATH 指引。
 
 ## 8. 交互式菜单说明
 

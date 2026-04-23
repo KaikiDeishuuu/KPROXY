@@ -134,6 +134,38 @@ ps_launcher_print_path_hint() {
   printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.zshrc\n\n" "${launcher_dir}"
 }
 
+ps_launcher_record_hint_marker() {
+  local marker_file="${1:-}"
+  [[ -n "${marker_file}" ]] || return 0
+  mkdir -p "$(dirname "${marker_file}")"
+  printf "shown_at=%s\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "${marker_file}"
+}
+
+ps_launcher_maybe_print_path_hint() {
+  local launcher_path="${1}"
+  local marker_file="${2:-}"
+  local mode="${3:-install}"
+  local launcher_dir
+  launcher_dir="$(dirname "${launcher_path}")"
+
+  if ps_launcher_path_has_dir "${launcher_dir}"; then
+    return 0
+  fi
+
+  if [[ -n "${marker_file}" && -f "${marker_file}" ]]; then
+    return 0
+  fi
+
+  if [[ "${mode}" == "runtime" ]]; then
+    ps_launcher_log_warn "kprxy is not resolvable in current PATH. Add ${launcher_dir} to PATH."
+    ps_launcher_record_hint_marker "${marker_file}"
+    return 0
+  fi
+
+  ps_launcher_print_path_hint "${launcher_path}"
+  ps_launcher_record_hint_marker "${marker_file}"
+}
+
 ps_launcher_print_success() {
   local project_dir="${1}"
   local launcher_path="${2}"

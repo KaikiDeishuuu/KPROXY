@@ -5,9 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PS_BOOTSTRAP_INSTALL_DIR="${PS_BOOTSTRAP_INSTALL_DIR:-}"
 PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=0
-PS_BOOTSTRAP_GH_USER="${PS_BOOTSTRAP_GH_USER:-<user>}"
-PS_BOOTSTRAP_GH_REPO="${PS_BOOTSTRAP_GH_REPO:-<repo>}"
-PS_BOOTSTRAP_GH_BRANCH="${PS_BOOTSTRAP_GH_BRANCH:-<branch>}"
+PS_DEFAULT_GH_USER="${PS_BOOTSTRAP_GH_USER:-<user>}"
+PS_DEFAULT_GH_REPO="${PS_BOOTSTRAP_GH_REPO:-<repo>}"
+PS_DEFAULT_GH_BRANCH="${PS_BOOTSTRAP_GH_BRANCH:-<branch>}"
+PS_BOOTSTRAP_GH_USER="${PS_DEFAULT_GH_USER}"
+PS_BOOTSTRAP_GH_REPO="${PS_DEFAULT_GH_REPO}"
+PS_BOOTSTRAP_GH_BRANCH="${PS_DEFAULT_GH_BRANCH}"
+PS_BOOTSTRAP_GH_USER_EXPLICIT=0
+PS_BOOTSTRAP_GH_REPO_EXPLICIT=0
+PS_BOOTSTRAP_GH_BRANCH_EXPLICIT=0
 PS_BOOTSTRAP_LAUNCHER_PATH="${PS_BOOTSTRAP_LAUNCHER_PATH:-}"
 PS_LOCAL_REPO_MODE=0
 PS_MODE="${PS_MODE:-main}"
@@ -35,6 +41,8 @@ Subcommands:
   export                     One-shot export: client config + initialized rules bundle
   doctor                     Run dependency preflight checks
   logs                       View installation log
+  info                       Show launcher/install metadata
+  config repo                Persist repository metadata for future updates
 
 Remote install example:
   bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh)
@@ -57,16 +65,19 @@ ps_cli_parse_args() {
         shift
         [[ $# -gt 0 ]] || { printf "Missing value for --gh-user\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_USER="$1"
+        PS_BOOTSTRAP_GH_USER_EXPLICIT=1
         ;;
       --gh-repo)
         shift
         [[ $# -gt 0 ]] || { printf "Missing value for --gh-repo\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_REPO="$1"
+        PS_BOOTSTRAP_GH_REPO_EXPLICIT=1
         ;;
       --gh-branch)
         shift
         [[ $# -gt 0 ]] || { printf "Missing value for --gh-branch\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_BRANCH="$1"
+        PS_BOOTSTRAP_GH_BRANCH_EXPLICIT=1
         ;;
       --mode)
         shift
@@ -112,6 +123,114 @@ ps_bootstrap_validate_repo_meta() {
     ps_bootstrap_error "Set --gh-user, --gh-repo, and --gh-branch (or env vars PS_BOOTSTRAP_GH_*)."
     return 1
   fi
+}
+
+ps_bootstrap_meta_file() {
+  printf "%s/state/repo-meta.conf" "${PS_BOOTSTRAP_INSTALL_DIR}"
+}
+
+ps_bootstrap_path_hint_marker() {
+  printf "%s/state/.launcher-path-hint-shown" "${PS_BOOTSTRAP_INSTALL_DIR}"
+}
+
+ps_bootstrap_value_is_placeholder() {
+  local value="${1:-}"
+  [[ -z "${value}" || "${value}" =~ ^\<.*\>$ ]]
+}
+
+ps_bootstrap_has_real_repo_meta() {
+  local user="${1:-}"
+  local repo="${2:-}"
+  local branch="${3:-}"
+  ! ps_bootstrap_value_is_placeholder "${user}" \
+    && ! ps_bootstrap_value_is_placeholder "${repo}" \
+    && ! ps_bootstrap_value_is_placeholder "${branch}"
+}
+
+ps_bootstrap_load_repo_meta() {
+  local meta_file
+  meta_file="$(ps_bootstrap_meta_file)"
+  [[ -f "${meta_file}" ]] || return 1
+
+  local gh_user=""
+  local gh_repo=""
+  local gh_branch=""
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      gh_user) gh_user="${value}" ;;
+      gh_repo) gh_repo="${value}" ;;
+      gh_branch) gh_branch="${value}" ;;
+    esac
+  done < "${meta_file}"
+
+  if ps_bootstrap_has_real_repo_meta "${gh_user}" "${gh_repo}" "${gh_branch}"; then
+    printf "%s|%s|%s" "${gh_user}" "${gh_repo}" "${gh_branch}"
+    return 0
+  fi
+
+  return 1
+}
+
+ps_bootstrap_persist_repo_meta() {
+  local source_url="${1:-}"
+  if ! ps_bootstrap_has_real_repo_meta "${PS_BOOTSTRAP_GH_USER}" "${PS_BOOTSTRAP_GH_REPO}" "${PS_BOOTSTRAP_GH_BRANCH}"; then
+    ps_bootstrap_info "Skipping metadata persistence because repository metadata is incomplete."
+    return 0
+  fi
+
+  mkdir -p "${PS_BOOTSTRAP_INSTALL_DIR}/state"
+  local meta_file
+  meta_file="$(ps_bootstrap_meta_file)"
+  local tmp
+  tmp="$(mktemp "${meta_file}.tmp.XXXXXX")"
+  cat > "${tmp}" <<EOF_META
+gh_user=${PS_BOOTSTRAP_GH_USER}
+gh_repo=${PS_BOOTSTRAP_GH_REPO}
+gh_branch=${PS_BOOTSTRAP_GH_BRANCH}
+source_url=${source_url}
+updated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+EOF_META
+  mv -f "${tmp}" "${meta_file}"
+}
+
+ps_bootstrap_resolve_repo_meta_for_update() {
+  local resolved_user=""
+  local resolved_repo=""
+  local resolved_branch=""
+
+  if [[ "${PS_BOOTSTRAP_GH_USER_EXPLICIT}" -eq 1 ]]; then
+    resolved_user="${PS_BOOTSTRAP_GH_USER}"
+  fi
+  if [[ "${PS_BOOTSTRAP_GH_REPO_EXPLICIT}" -eq 1 ]]; then
+    resolved_repo="${PS_BOOTSTRAP_GH_REPO}"
+  fi
+  if [[ "${PS_BOOTSTRAP_GH_BRANCH_EXPLICIT}" -eq 1 ]]; then
+    resolved_branch="${PS_BOOTSTRAP_GH_BRANCH}"
+  fi
+
+  local persisted=""
+  if persisted="$(ps_bootstrap_load_repo_meta 2>/dev/null)"; then
+    IFS='|' read -r persisted_user persisted_repo persisted_branch <<< "${persisted}"
+    [[ -n "${resolved_user}" ]] || resolved_user="${persisted_user}"
+    [[ -n "${resolved_repo}" ]] || resolved_repo="${persisted_repo}"
+    [[ -n "${resolved_branch}" ]] || resolved_branch="${persisted_branch}"
+  fi
+
+  [[ -n "${resolved_user}" ]] || resolved_user="${PS_DEFAULT_GH_USER}"
+  [[ -n "${resolved_repo}" ]] || resolved_repo="${PS_DEFAULT_GH_REPO}"
+  [[ -n "${resolved_branch}" ]] || resolved_branch="${PS_DEFAULT_GH_BRANCH}"
+
+  if ! ps_bootstrap_has_real_repo_meta "${resolved_user}" "${resolved_repo}" "${resolved_branch}"; then
+    ps_bootstrap_error "Cannot run update: repository metadata is incomplete."
+    ps_bootstrap_error "Required: --gh-user, --gh-repo, --gh-branch (or persisted metadata in state/repo-meta.conf)."
+    ps_bootstrap_error "Repair metadata with:"
+    ps_bootstrap_error "  kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>"
+    return 1
+  fi
+
+  PS_BOOTSTRAP_GH_USER="${resolved_user}"
+  PS_BOOTSTRAP_GH_REPO="${resolved_repo}"
+  PS_BOOTSTRAP_GH_BRANCH="${resolved_branch}"
 }
 
 ps_bootstrap_resolve_paths() {
@@ -161,7 +280,7 @@ ps_bootstrap_install_launcher() {
     return 1
   }
 
-  ps_launcher_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+  ps_launcher_maybe_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}" "$(ps_bootstrap_path_hint_marker)" "install"
   ps_launcher_print_success "${PS_BOOTSTRAP_INSTALL_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
 }
 
@@ -261,6 +380,7 @@ ps_bootstrap_from_github() {
 
   rm -rf "${tmpdir}"
   ps_bootstrap_info "Project files synced to ${PS_BOOTSTRAP_INSTALL_DIR}"
+  ps_bootstrap_persist_repo_meta "${archive_url}"
   ps_bootstrap_install_launcher || return 2
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
@@ -653,6 +773,7 @@ ps_handle_subcommand() {
       if [[ "${#}" -gt 0 ]]; then
         ps_ui_warn "Ignoring extra args for update: $*"
       fi
+      ps_bootstrap_resolve_repo_meta_for_update || return $?
       PS_REMOTE_UPGRADE=1
       PS_BOOTSTRAP_ONLY=1
       ps_bootstrap_from_github
@@ -670,12 +791,47 @@ ps_handle_subcommand() {
       ps_init_manifest
       ps_diag_view_install_log
       ;;
+    info)
+      ps_print_runtime_info
+      ;;
+    config)
+      if [[ "${1:-}" != "repo" ]]; then
+        ps_ui_error "Unsupported config scope: ${1:-<empty>}"
+        printf "Usage: kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
+        return 2
+      fi
+      ps_configure_repo_metadata
+      ;;
     *)
       ps_ui_error "Unsupported subcommand: ${subcommand}"
-      printf "Supported subcommands: update, export, doctor, logs\n"
+      printf "Supported subcommands: update, export, doctor, logs, info, config repo\n"
       return 2
       ;;
   esac
+}
+
+ps_print_runtime_info() {
+  local meta_file
+  meta_file="$(ps_bootstrap_meta_file)"
+  printf "Install dir: %s\n" "${PS_BOOTSTRAP_INSTALL_DIR}"
+  printf "Launcher: %s\n" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+  printf "Repo metadata file: %s\n" "${meta_file}"
+  if [[ -f "${meta_file}" ]]; then
+    printf "Repo metadata:\n"
+    sed 's/^/  /' "${meta_file}"
+  else
+    printf "Repo metadata: <not configured>\n"
+  fi
+}
+
+ps_configure_repo_metadata() {
+  if ! ps_bootstrap_has_real_repo_meta "${PS_BOOTSTRAP_GH_USER}" "${PS_BOOTSTRAP_GH_REPO}" "${PS_BOOTSTRAP_GH_BRANCH}"; then
+    ps_ui_error "Cannot persist repository metadata from placeholders."
+    printf "Usage: kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
+    return 2
+  fi
+  ps_bootstrap_persist_repo_meta "manual-config"
+  ps_ui_success "Repository metadata saved to $(ps_bootstrap_meta_file)"
 }
 
 ps_ensure_local_launcher() {
@@ -685,7 +841,7 @@ ps_ensure_local_launcher() {
     ps_ui_warn "Launcher verification failed: ${PS_BOOTSTRAP_LAUNCHER_PATH}"
     return 1
   fi
-  ps_launcher_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}"
+  ps_launcher_maybe_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}" "$(ps_bootstrap_path_hint_marker)" "runtime"
 }
 
 main() {
