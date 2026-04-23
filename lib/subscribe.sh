@@ -679,7 +679,7 @@ ps_sub_export_local_proxy_templates() {
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "local-proxy")"
-  mkdir -p "${root}"
+  ps_sub_prepare_bundle_dirs "${root}" || return 1
 
   local out_file="${root}/local-proxy-routing-template.md"
 
@@ -712,22 +712,24 @@ ps_sub_export_client_with_rules_bundle() {
 
   local root="$(ps_sub_create_export_root "client-rules-bundle")"
   local failures=0
+  local failed_steps=()
 
-  ps_sub_export_initialized_rules_bundle "${root}" || failures=$((failures + 1))
-  ps_sub_generate_share_links "${root}" || failures=$((failures + 1))
-  ps_sub_generate_base64_subscription "${root}" || failures=$((failures + 1))
-  ps_sub_export_clash_meta "${root}" || failures=$((failures + 1))
-  ps_sub_export_xray_client_config "${root}" || failures=$((failures + 1))
-  ps_sub_export_singbox_client_config "${root}" || failures=$((failures + 1))
-  ps_sub_export_local_proxy_templates "${root}" || failures=$((failures + 1))
+  ps_sub_export_initialized_rules_bundle "${root}" || { failures=$((failures + 1)); failed_steps+=("initialized-rules-bundle"); }
+  ps_sub_generate_share_links "${root}" || { failures=$((failures + 1)); failed_steps+=("share-links"); }
+  ps_sub_generate_base64_subscription "${root}" || { failures=$((failures + 1)); failed_steps+=("base64-subscription"); }
+  ps_sub_export_clash_meta "${root}" || { failures=$((failures + 1)); failed_steps+=("clash-meta"); }
+  ps_sub_export_xray_client_config "${root}" || { failures=$((failures + 1)); failed_steps+=("xray-client"); }
+  ps_sub_export_singbox_client_config "${root}" || { failures=$((failures + 1)); failed_steps+=("singbox-client"); }
+  ps_sub_export_local_proxy_templates "${root}" || { failures=$((failures + 1)); failed_steps+=("local-proxy-template"); }
 
-  if (( failures >= 6 )); then
+  if (( failures == 7 )); then
     ps_log_error "Client config + rules bundle export failed"
     return 1
   fi
 
   if (( failures > 0 )); then
     ps_log_warn "Client config + rules bundle exported with partial failures"
+    ps_log_warn "Failed steps: ${failed_steps[*]}"
   fi
 
   ps_sub_record_export "client-rules-bundle" "${root}"
