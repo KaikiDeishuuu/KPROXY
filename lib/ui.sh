@@ -74,8 +74,8 @@ ps_ui_error() {
 
 ps_ui_menu_select() {
   local title="${1}"
-  local zero_label="${2:-Back}"
-  local prompt="${3:-Choose}"
+  local zero_label="${2:-返回}"
+  local prompt="${3:-请选择}"
   shift 3
   local options=("$@")
 
@@ -93,13 +93,13 @@ ps_ui_menu_select() {
 }
 
 ps_ui_render_table() {
-  local title="${1:-Table}"
+  local title="${1:-列表}"
   shift || true
   local rows=("$@")
 
   ps_ui_section "${title}"
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    printf "  (empty)\n"
+    printf "  （空）\n"
     return 0
   fi
 

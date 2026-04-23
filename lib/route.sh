@@ -13,7 +13,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 ps_route_pick_name() {
   mapfile -t rows < <(jq -r '.routes | sort_by(.priority)[] | "\(.name)|\(.priority)|\(.outbound)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No routes found."
+    ps_log_warn "未找到路由。"
     return 1
   fi
 
@@ -21,14 +21,14 @@ ps_route_pick_name() {
   printf "\n"
   for row in "${rows[@]}"; do
     IFS='|' read -r name priority outbound enabled <<<"${row}"
-    printf "%d) %s priority=%s outbound=%s enabled=%s\n" "${i}" "${name}" "${priority}" "${outbound}" "${enabled}"
+    printf "%d) %s priority=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${priority}" "${outbound}" "${enabled}"
     i=$((i + 1))
   done
 
   local choice
-  choice="$(ps_prompt_required "Select route number")"
+  choice="$(ps_prompt_required "请选择路由编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "Invalid route selection"
+    ps_log_error "路由选择无效"
     return 1
   fi
 
@@ -39,7 +39,7 @@ ps_route_pick_name() {
 ps_route_pick_outbound() {
   mapfile -t rows < <(jq -r '.outbounds[] | select(.enabled != false) | "\(.tag)|\(.type)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No available outbounds."
+    ps_log_warn "没有可用出站。"
     return 1
   fi
 
@@ -51,9 +51,9 @@ ps_route_pick_outbound() {
   done
 
   local choice
-  choice="$(ps_prompt_required "Select outbound number")"
+  choice="$(ps_prompt_required "请选择出站编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "Invalid outbound selection"
+    ps_log_error "出站选择无效"
     return 1
   fi
 
@@ -62,32 +62,32 @@ ps_route_pick_outbound() {
 }
 
 ps_route_list() {
-  ps_print_header "Routing Rules"
+  ps_print_header "路由规则"
   jq -r '
     if (.routes | length) == 0 then
-      "No routes configured."
+      "未配置路由。"
     else
       (.routes | sort_by(.priority)[] |
-        "- \(.name) priority=\(.priority) outbound=\(.outbound) inbound_tags=\((.inbound_tag // [])|join(",")) domain_suffix=\((.domain_suffix // [])|join(",")) domain_keyword=\((.domain_keyword // [])|join(",")) ip_cidr=\((.ip_cidr // [])|join(",")) network=\((.network // [])|join(",")) enabled=\(.enabled)")
+        "- \(.name) priority=\(.priority) outbound=\(.outbound) inbound_tags=\((.inbound_tag // [])|join(",")) domain_suffix=\((.domain_suffix // [])|join(",")) domain_keyword=\((.domain_keyword // [])|join(",")) ip_cidr=\((.ip_cidr // [])|join(",")) network=\((.network // [])|join(",")) 启用=\(.enabled)")
     end
   ' "${PS_MANIFEST}"
 }
 
 ps_route_create_rule() {
-  ps_print_header "Create Routing Rule"
+  ps_print_header "创建路由规则"
 
   local name priority inbound_tags domain_suffix domain_keyword ip_cidr network outbound
-  name="$(ps_prompt_required "Rule name")"
-  priority="$(ps_prompt "Priority (lower first)" "100")"
-  inbound_tags="$(ps_prompt "Inbound tags (comma separated, optional)" "")"
-  domain_suffix="$(ps_prompt "Domain suffix list (comma separated, optional)" "")"
-  domain_keyword="$(ps_prompt "Domain keyword list (comma separated, optional)" "")"
-  ip_cidr="$(ps_prompt "IP/CIDR list (comma separated, optional)" "")"
-  network="$(ps_prompt "Network list TCP/UDP (comma separated, optional)" "")"
+  name="$(ps_prompt_required "规则名称")"
+  priority="$(ps_prompt "优先级（越小越优先）" "100")"
+  inbound_tags="$(ps_prompt "入站标签（逗号分隔，可选）" "")"
+  domain_suffix="$(ps_prompt "域名后缀列表（逗号分隔，可选）" "")"
+  domain_keyword="$(ps_prompt "域名关键词列表（逗号分隔，可选）" "")"
+  ip_cidr="$(ps_prompt "IP/CIDR 列表（逗号分隔，可选）" "")"
+  network="$(ps_prompt "网络列表 TCP/UDP（逗号分隔，可选）" "")"
   outbound="$(ps_route_pick_outbound)" || return 1
 
   if ! [[ "${priority}" =~ ^[0-9]+$ ]]; then
-    ps_log_error "Invalid priority"
+    ps_log_error "优先级无效"
     return 1
   fi
 
@@ -117,7 +117,7 @@ ps_route_create_rule() {
     }')"
 
   ps_manifest_update --argjson route "${route_json}" --arg ts "$(ps_now_iso)" '.routes += [$route] | .meta.updated_at = $ts'
-  ps_log_success "Route created: ${name}"
+  ps_log_success "路由已创建： ${name}"
 }
 
 ps_route_create_forwarding() {
@@ -126,24 +126,24 @@ ps_route_create_forwarding() {
     return $?
   fi
 
-  ps_log_error "Forwarding module is not loaded. Please source lib/forward.sh first."
+  ps_log_error "转发模块未加载，请先 source lib/forward.sh。"
   return 1
 }
 
 ps_route_reorder_priority() {
-  ps_print_header "Reorder Route Priority"
+  ps_print_header "调整路由优先级"
   local name
   name="$(ps_route_pick_name)" || return 1
 
   local priority
-  priority="$(ps_prompt_required "New priority")"
+  priority="$(ps_prompt_required "新的优先级")"
   if ! [[ "${priority}" =~ ^[0-9]+$ ]]; then
-    ps_log_error "Invalid priority"
+    ps_log_error "优先级无效"
     return 1
   fi
 
   ps_manifest_update --arg name "${name}" --argjson priority "${priority}" --arg ts "$(ps_now_iso)" '.routes |= map(if .name == $name then .priority = $priority | .updated_at = $ts else . end) | .meta.updated_at = $ts'
-  ps_log_success "Route priority updated: ${name} => ${priority}"
+  ps_log_success "路由优先级已更新： ${name} => ${priority}"
 }
 
 ps_route_domain_match() {
@@ -187,17 +187,17 @@ ps_route_ip_match() {
 }
 
 ps_route_test_match() {
-  ps_print_header "Test Route Matching"
+  ps_print_header "测试路由匹配"
 
   local inbound_tag domain ip network
-  inbound_tag="$(ps_prompt "Inbound tag" "")"
-  domain="$(ps_prompt "Domain" "")"
+  inbound_tag="$(ps_prompt "入站标签" "")"
+  domain="$(ps_prompt "域名" "")"
   ip="$(ps_prompt "IP" "")"
-  network="$(ps_prompt "Network (tcp/udp)" "tcp")"
+  network="$(ps_prompt "网络（tcp/udp）" "tcp")"
 
   mapfile -t routes < <(jq -c '.routes | sort_by(.priority)[] | select(.enabled != false)' "${PS_MANIFEST}")
   if [[ "${#routes[@]}" -eq 0 ]]; then
-    ps_log_warn "No routes to test"
+    ps_log_warn "没有可测试的路由"
     return 1
   fi
 
@@ -234,12 +234,12 @@ ps_route_test_match() {
       fi
     fi
 
-    printf "Matched route: %s => outbound=%s\n" "${name}" "${outbound}"
+    printf "匹配到路由： %s => outbound=%s\n" "${name}" "${outbound}"
     matched=1
     break
   done
 
   if [[ "${matched}" -eq 0 ]]; then
-    printf "No rule matched. Default behavior should apply.\n"
+    printf "未匹配到规则，将使用默认行为。\n"
   fi
 }

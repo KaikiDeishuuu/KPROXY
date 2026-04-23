@@ -185,7 +185,7 @@ ps_sub_collect_links() {
 }
 
 ps_sub_generate_share_links() {
-  ps_print_header "Generate Share Links"
+  ps_print_header "生成分享链接"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "subscription")"
@@ -197,19 +197,19 @@ ps_sub_generate_share_links() {
   links="$(ps_sub_collect_links)"
 
   if [[ -z "${links}" ]]; then
-    ps_log_warn "No enabled stacks for share links"
+    ps_log_warn "没有可用于分享链接的已启用协议栈"
     return 1
   fi
 
   printf "%s\n" "${links}" >"${out_file}"
   ps_sub_record_export "share-links" "${out_file}"
-  ps_log_success "Share links exported: ${out_file}"
-  ps_log_info "Initialized rules prepared: ${root}/rules"
+  ps_log_success "分享链接已导出： ${out_file}"
+  ps_log_info "初始化规则已准备： ${root}/rules"
   printf "%s\n" "${links}"
 }
 
 ps_sub_generate_base64_subscription() {
-  ps_print_header "Generate Base64 Subscription"
+  ps_print_header "生成 Base64 订阅"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "subscription")"
@@ -225,7 +225,7 @@ ps_sub_generate_base64_subscription() {
   fi
 
   if [[ -z "${links}" ]]; then
-    ps_log_warn "No enabled stacks for subscription"
+    ps_log_warn "没有可用于订阅的已启用协议栈"
     return 1
   fi
 
@@ -234,8 +234,8 @@ ps_sub_generate_base64_subscription() {
   local out_file="${root}/subscriptions/all.b64.txt"
   printf "%s" "${links}" | base64 -w 0 >"${out_file}"
   ps_sub_record_export "subscription-base64" "${out_file}"
-  ps_log_success "Base64 subscription exported: ${out_file}"
-  ps_log_info "Initialized rules prepared: ${root}/rules"
+  ps_log_success "Base64 订阅已导出： ${out_file}"
+  ps_log_info "初始化规则已准备： ${root}/rules"
 }
 
 ps_sub_clash_proxy_from_stack() {
@@ -340,19 +340,19 @@ ps_sub_clash_proxy_from_stack() {
 }
 
 ps_sub_export_initialized_rules_bundle() {
-  ps_print_header "Export Initialized Rules Bundle"
+  ps_print_header "导出初始化规则包"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "rules")"
 
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
   ps_sub_record_export "rules-bundle" "${root}/rules"
-  ps_log_success "Initialized rules bundle exported: ${root}/rules"
-  ps_log_info "Clash-compatible rules mirror: ${root}/clash/rules"
+  ps_log_success "初始化规则包已导出： ${root}/rules"
+  ps_log_info "Clash 兼容规则镜像： ${root}/clash/rules"
 }
 
 ps_sub_export_clash_meta() {
-  ps_print_header "Export Clash.Meta Config"
+  ps_print_header "导出 Clash.Meta Config"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "clash")"
@@ -396,12 +396,12 @@ ps_sub_export_clash_meta() {
     "${template}" >"${out_file}"
 
   ps_sub_record_export "clash-meta" "${out_file}"
-  ps_log_success "Clash.Meta exported: ${out_file}"
-  ps_log_info "Initialized rules prepared: ${root}/clash/rules"
+  ps_log_success "Clash.Meta 已导出： ${out_file}"
+  ps_log_info "初始化规则已准备： ${root}/clash/rules"
 }
 
 ps_sub_export_xray_client_config() {
-  ps_print_header "Export Xray Client Config"
+  ps_print_header "导出 Xray 客户端配置"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "xray-client")"
@@ -526,18 +526,18 @@ ps_sub_export_xray_client_config() {
   done < <(jq -c '.stacks[]? | select(.enabled == true and .protocol == "vless")' "${PS_MANIFEST}")
 
   if (( count == 0 )); then
-    ps_log_warn "No enabled VLESS stack for Xray client export"
+    ps_log_warn "没有可用于 Xray 客户端导出的已启用 VLESS 协议栈"
     return 1
   fi
 
   cp "${first_file}" "${root}/xray/client.json"
   ps_sub_record_export "xray-client" "${root}/xray/client.json"
-  ps_log_success "Xray client configs exported: ${root}/xray"
-  ps_log_info "Initialized rules prepared: ${root}/rules"
+  ps_log_success "Xray 客户端配置已导出： ${root}/xray"
+  ps_log_info "初始化规则已准备： ${root}/rules"
 }
 
 ps_sub_export_singbox_client_config() {
-  ps_print_header "Export sing-box Client Config"
+  ps_print_header "导出 sing-box 客户端配置"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "singbox-client")"
@@ -664,18 +664,18 @@ ps_sub_export_singbox_client_config() {
   done < <(jq -c '.stacks[]? | select(.enabled == true and .protocol == "vless")' "${PS_MANIFEST}")
 
   if (( count == 0 )); then
-    ps_log_warn "No enabled VLESS stack for sing-box client export"
+    ps_log_warn "没有可用于 sing-box 客户端导出的已启用 VLESS 协议栈"
     return 1
   fi
 
   cp "${first_file}" "${root}/singbox/client.json"
   ps_sub_record_export "singbox-client" "${root}/singbox/client.json"
-  ps_log_success "sing-box client configs exported: ${root}/singbox"
-  ps_log_info "Initialized rules prepared: ${root}/rules"
+  ps_log_success "sing-box 客户端配置已导出： ${root}/singbox"
+  ps_log_info "初始化规则已准备： ${root}/rules"
 }
 
 ps_sub_export_local_proxy_templates() {
-  ps_print_header "Export Local Proxy Templates with Routing"
+  ps_print_header "导出带路由的本地代理模板"
 
   local root="${1:-}"
   [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "local-proxy")"
@@ -684,31 +684,31 @@ ps_sub_export_local_proxy_templates() {
   local out_file="${root}/local-proxy-routing-template.md"
 
   cat >"${out_file}" <<EOF
-# Local Proxy Routing Template
+# 本地代理路由模板
 
-## Suggested forwarding examples
+## 推荐转发示例
 
 - local SOCKS/HTTP/Mixed inbound -> socks5 upstream
 - local SOCKS/HTTP/Mixed inbound -> remote VLESS
 - local inbound -> direct
 - local inbound -> block
 
-## Current inbounds
+## 当前入站
 $(jq -r '.inbounds[]? | "- \(.tag) type=\(.type) listen=\(.listen):\(.port)"' "${PS_MANIFEST}")
 
-## Current outbounds
+## 当前出站
 $(jq -r '.outbounds[]? | "- \(.tag) type=\(.type)"' "${PS_MANIFEST}")
 
-## Current routes (priority order)
+## 当前路由（按优先级）
 $(jq -r '.routes | sort_by(.priority)[] | "- [\(.priority)] \(.name) => \(.outbound)"' "${PS_MANIFEST}")
 EOF
 
   ps_sub_record_export "local-proxy-template" "${out_file}"
-  ps_log_success "Local proxy template exported: ${out_file}"
+  ps_log_success "本地代理模板已导出： ${out_file}"
 }
 
 ps_sub_export_client_with_rules_bundle() {
-  ps_print_header "Export Client Config + Initialized Rules Bundle"
+  ps_print_header "导出客户端配置 + 初始化规则包"
 
   local root="$(ps_sub_create_export_root "client-rules-bundle")"
   local failures=0
@@ -723,15 +723,15 @@ ps_sub_export_client_with_rules_bundle() {
   ps_sub_export_local_proxy_templates "${root}" || { failures=$((failures + 1)); failed_steps+=("local-proxy-template"); }
 
   if (( failures == 7 )); then
-    ps_log_error "Client config + rules bundle export failed"
+    ps_log_error "客户端配置 + 规则包导出失败"
     return 1
   fi
 
   if (( failures > 0 )); then
-    ps_log_warn "Client config + rules bundle exported with partial failures"
-    ps_log_warn "Failed steps: ${failed_steps[*]}"
+    ps_log_warn "客户端配置 + 规则包导出完成，但有部分失败"
+    ps_log_warn "失败步骤： ${failed_steps[*]}"
   fi
 
   ps_sub_record_export "client-rules-bundle" "${root}"
-  ps_log_success "Client config + initialized rules bundle exported: ${root}"
+  ps_log_success "客户端配置 + 初始化规则包已导出： ${root}"
 }

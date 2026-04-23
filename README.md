@@ -6,7 +6,7 @@
 
 ## 1. 项目简介
 
-Proxy Stack 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）提供交互式菜单，将常见代理维护流程拆分到 `lib/*.sh` 模块。核心状态由 `state/manifest.json` 持久化管理，导出文件按时间戳写入 `output/`，避免覆盖旧结果。
+Proxy 协议栈 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）提供交互式菜单，将常见代理维护流程拆分到 `lib/*.sh` 模块。核心状态由 `state/manifest.json` 持久化管理，导出文件按时间戳写入 `output/`，避免覆盖旧结果。
 
 ## 2. 功能特性
 
@@ -117,25 +117,25 @@ kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 
 主菜单路径：
 
-- Stack Management
-- Inbound Management
-- Outbounds and Routing
-- Certificates and Domains
-- Subscriptions and Export
-- Logs and Diagnostics
-- Engines and Services
-- Backup and Restore
+- 协议栈管理
+- 入站管理
+- 出站与路由
+- 证书与域名
+- 订阅与导出
+- 日志与诊断
+- 引擎与服务
+- 备份与恢复
 
 订阅/导出子菜单（当前实现）：
 
-1. Generate share links
-2. Generate Base64 subscription
-3. Export Clash.Meta
-4. Export Xray client config
-5. Export sing-box client config
-6. Export initialized rules bundle
-7. Export client config + initialized rules bundle
-8. Export local proxy templates with routing
+1. 生成分享链接
+2. 生成 Base64 订阅
+3. 导出 Clash.Meta
+4. 导出 Xray 客户端配置
+5. 导出 sing-box 客户端配置
+6. 导出初始化规则包
+7. 导出客户端配置 + 初始化规则包
+8. 导出带路由的本地代理模板
 
 ## 12. 订阅与导出说明
 
@@ -151,7 +151,7 @@ kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
 
 ### 组合导出工作流
 
-选择 `Export client config + initialized rules bundle` 后，会在同一目录内依次尝试导出上述各类文件；若部分步骤失败会明确提示失败步骤，不会伪装全部成功。
+选择 `导出客户端配置 + 初始化规则包` 后，会在同一目录内依次尝试导出上述各类文件；若部分步骤失败会明确提示失败步骤，不会伪装全部成功。
 
 ## 13. 初始化规则配置说明
 
@@ -268,6 +268,6 @@ output/client-rules-bundle-20260101-120000/
 
 - Main entry: `install.sh`
 - Forwarding entry: `forward.sh`
-- Export menu includes share links, Base64, Clash.Meta, Xray client, sing-box client, initialized rules bundle, combined export.
+- 导出菜单包含分享链接、Base64、Clash.Meta、Xray 客户端、sing-box 客户端、初始化规则包、组合导出。
 - Outputs are timestamped under `output/` to avoid blind overwrite.
-- `jq` is required at runtime; missing dependency is treated as a hard error.
+- 运行时依赖 `jq`，缺失时会作为硬错误处理并中止执行。

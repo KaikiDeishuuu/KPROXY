@@ -265,7 +265,7 @@ ps_render_xray_routes_json() {
 }
 
 ps_render_xray_config() {
-  ps_print_header "Render Xray Config"
+  ps_print_header "渲染 Xray 配置"
   local template="${PS_TEMPLATES_DIR}/xray/base.json.tpl"
   if [[ ! -f "${template}" ]]; then
     ps_log_error "Missing xray template: ${template}"
@@ -289,17 +289,17 @@ ps_render_xray_config() {
 
   if ps_command_exists xray; then
     if ! xray run -test -c "${candidate}" >/dev/null 2>&1; then
-      ps_log_error "Xray config validation failed. Kept previous config."
+      ps_log_error "Xray 配置校验失败，已保留旧配置。"
       rm -f "${candidate}"
       return 1
     fi
   else
-    ps_log_warn "xray not found, skipped xray config validation"
+    ps_log_warn "未找到 xray，已跳过 Xray 配置校验"
   fi
 
   ps_backup_file_if_exists "${PS_XRAY_CONFIG}" "xray-config" >/dev/null || true
   ps_atomic_replace_file "${candidate}" "${PS_XRAY_CONFIG}"
-  ps_log_success "Xray config rendered: ${PS_XRAY_CONFIG}"
+  ps_log_success "Xray 配置已渲染：${PS_XRAY_CONFIG}"
 }
 
 ps_render_singbox_inbounds_json() {
@@ -519,7 +519,7 @@ ps_render_singbox_routes_json() {
 }
 
 ps_render_singbox_config() {
-  ps_print_header "Render sing-box Config"
+  ps_print_header "渲染 sing-box 配置"
   local template="${PS_TEMPLATES_DIR}/singbox/base.json.tpl"
   if [[ ! -f "${template}" ]]; then
     ps_log_error "Missing sing-box template: ${template}"
@@ -544,17 +544,17 @@ ps_render_singbox_config() {
 
   if ps_command_exists sing-box; then
     if ! sing-box check -c "${candidate}" >/dev/null 2>&1; then
-      ps_log_error "sing-box config validation failed. Kept previous config."
+      ps_log_error "sing-box 配置校验失败，已保留旧配置。"
       rm -f "${candidate}"
       return 1
     fi
   else
-    ps_log_warn "sing-box not found, skipped config validation"
+    ps_log_warn "未找到 sing-box，已跳过配置校验"
   fi
 
   ps_backup_file_if_exists "${PS_SINGBOX_CONFIG}" "singbox-config" >/dev/null || true
   ps_atomic_replace_file "${candidate}" "${PS_SINGBOX_CONFIG}"
-  ps_log_success "sing-box config rendered: ${PS_SINGBOX_CONFIG}"
+  ps_log_success "sing-box 配置已渲染：${PS_SINGBOX_CONFIG}"
 }
 
 ps_render_all() {
@@ -563,9 +563,9 @@ ps_render_all() {
   ps_render_singbox_config || ok=1
 
   if [[ "${ok}" -eq 0 ]]; then
-    ps_log_success "Render completed"
+    ps_log_success "渲染完成"
     return 0
   fi
-  ps_log_warn "Render completed with warnings"
+  ps_log_warn "渲染完成，但存在告警"
   return 1
 }

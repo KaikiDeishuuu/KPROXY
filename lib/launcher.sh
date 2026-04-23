@@ -9,7 +9,7 @@ ps_launcher_log_info() {
   if declare -F ps_log_info >/dev/null 2>&1; then
     ps_log_info "$*"
   else
-    printf "[launcher] %s\n" "$*"
+    printf "[启动器] %s\n" "$*"
   fi
 }
 
@@ -17,7 +17,7 @@ ps_launcher_log_warn() {
   if declare -F ps_log_warn >/dev/null 2>&1; then
     ps_log_warn "$*"
   else
-    printf "[launcher] WARN: %s\n" "$*" >&2
+    printf "[启动器] 警告： %s\n" "$*" >&2
   fi
 }
 
@@ -25,7 +25,7 @@ ps_launcher_log_error() {
   if declare -F ps_log_error >/dev/null 2>&1; then
     ps_log_error "$*"
   else
-    printf "[launcher] ERROR: %s\n" "$*" >&2
+    printf "[启动器] 错误： %s\n" "$*" >&2
   fi
 }
 
@@ -121,16 +121,16 @@ ps_launcher_print_path_hint() {
   launcher_dir="$(dirname "${launcher_path}")"
 
   if ps_launcher_path_has_dir "${launcher_dir}"; then
-    ps_launcher_log_info "Launcher directory is already in PATH: ${launcher_dir}"
+    ps_launcher_log_info "启动器目录已在 PATH 中：${launcher_dir}"
     return 0
   fi
 
-  ps_launcher_log_warn "Launcher directory is not in PATH: ${launcher_dir}"
-  printf "\nAdd it to your shell profile, then reopen your shell:\n"
+  ps_launcher_log_warn "启动器目录不在 PATH 中：${launcher_dir}"
+  printf "\n请加入 shell 配置后重新打开终端：\n"
   printf "  export PATH=\"%s:\$PATH\"\n" "${launcher_dir}"
-  printf "\nFor bash, you can run:\n"
+  printf "\nbash 可执行：\n"
   printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.bashrc\n" "${launcher_dir}"
-  printf "For zsh, you can run:\n"
+  printf "zsh 可执行：\n"
   printf "  echo 'export PATH=\"%s:\$PATH\"' >> ~/.zshrc\n\n" "${launcher_dir}"
 }
 
@@ -157,7 +157,7 @@ ps_launcher_maybe_print_path_hint() {
   fi
 
   if [[ "${mode}" == "runtime" ]]; then
-    ps_launcher_log_warn "kprxy is not resolvable in current PATH. Add ${launcher_dir} to PATH."
+    ps_launcher_log_warn "当前 PATH 无法解析 kprxy，请将 ${launcher_dir} 加入 PATH。"
     ps_launcher_record_hint_marker "${marker_file}"
     return 0
   fi
@@ -170,9 +170,9 @@ ps_launcher_print_success() {
   local project_dir="${1}"
   local launcher_path="${2}"
 
-  printf "\nInstallation completed successfully.\n\n"
-  printf "Project path: %s\n" "${project_dir}"
-  printf "Launcher: %s\n\n" "${launcher_path}"
-  printf "Run it anytime with:\n"
+  printf "\n安装完成。\n\n"
+  printf "项目路径： %s\n" "${project_dir}"
+  printf "启动器： %s\n\n" "${launcher_path}"
+  printf "可随时运行：\n"
   printf "  kprxy\n\n"
 }

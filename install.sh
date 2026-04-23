@@ -27,30 +27,30 @@ PS_RUNTIME_ARGS=()
 
 ps_cli_print_help() {
   cat <<'EOF'
-Proxy Stack installer/launcher
+Proxy 协议栈 安装器/启动器
 
-Options:
-  --mode <main|forward>      Run main framework menu or forwarding-only menu
-  --install-dir <path>       Target directory for remote bootstrap install
-  --gh-user <user>           GitHub owner for remote bootstrap
-  --gh-repo <repo>           GitHub repository for remote bootstrap
-  --gh-branch <branch>       GitHub branch/tag for remote bootstrap
-  --bootstrap-only           Download/sync project files only, do not launch menu
-  --upgrade                  Upgrade existing bootstrap install in --install-dir
-  -h, --help                 Show this help message
+参数：
+  --mode <main|forward>      运行主菜单或仅转发菜单
+  --install-dir <path>       远程引导安装目标目录
+  --gh-user <user>           远程引导 GitHub 用户名
+  --gh-repo <repo>           远程引导 GitHub 仓库名
+  --gh-branch <branch>       远程引导 GitHub 分支/标签
+  --bootstrap-only           仅下载/同步项目文件，不启动菜单
+  --upgrade                  升级 --install-dir 中已有安装
+  -h, --help                 显示帮助信息
 
-Subcommands:
-  update                     Sync latest scripts/templates to current install dir
-  export                     One-shot export: client config + initialized rules bundle
-  doctor                     Run dependency preflight checks
-  logs                       View installation log
-  info                       Show launcher/install metadata
-  config repo                Persist repository metadata for future updates
+子命令：
+  update                     同步最新脚本/模板到当前安装目录
+  export                     一键导出：客户端配置 + 初始化规则包
+  doctor                     执行依赖预检
+  logs                       查看安装日志
+  info                       显示启动器/安装元数据
+  config repo                保存仓库元数据供后续更新使用
 
-Remote install example:
+远程安装示例：
   bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
 
-Forward-only remote launch:
+仅转发模式远程启动：
   bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) --mode forward
 EOF
 }
@@ -60,31 +60,31 @@ ps_cli_parse_args() {
     case "$1" in
       --install-dir)
         shift
-        [[ $# -gt 0 ]] || { printf "Missing value for --install-dir\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf "--install-dir 缺少参数值\n" >&2; exit 2; }
         PS_BOOTSTRAP_INSTALL_DIR="$1"
         PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=1
         ;;
       --gh-user)
         shift
-        [[ $# -gt 0 ]] || { printf "Missing value for --gh-user\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf "--gh-user 缺少参数值\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_USER="$1"
         PS_BOOTSTRAP_GH_USER_EXPLICIT=1
         ;;
       --gh-repo)
         shift
-        [[ $# -gt 0 ]] || { printf "Missing value for --gh-repo\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf "--gh-repo 缺少参数值\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_REPO="$1"
         PS_BOOTSTRAP_GH_REPO_EXPLICIT=1
         ;;
       --gh-branch)
         shift
-        [[ $# -gt 0 ]] || { printf "Missing value for --gh-branch\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf "--gh-branch 缺少参数值\n" >&2; exit 2; }
         PS_BOOTSTRAP_GH_BRANCH="$1"
         PS_BOOTSTRAP_GH_BRANCH_EXPLICIT=1
         ;;
       --mode)
         shift
-        [[ $# -gt 0 ]] || { printf "Missing value for --mode\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf "--mode 缺少参数值\n" >&2; exit 2; }
         PS_MODE="$1"
         ;;
       --bootstrap-only)
@@ -105,25 +105,25 @@ ps_cli_parse_args() {
 }
 
 ps_bootstrap_info() {
-  printf "[bootstrap] %s\n" "$*"
+  printf "[引导] %s\n" "$*"
 }
 
 ps_bootstrap_error() {
-  printf "[bootstrap] ERROR: %s\n" "$*" >&2
+  printf "[引导] 错误： %s\n" "$*" >&2
 }
 
 ps_bootstrap_require_cmd() {
   local cmd="${1}"
   if ! command -v "${cmd}" >/dev/null 2>&1; then
-    ps_bootstrap_error "Required command not found: ${cmd}"
+    ps_bootstrap_error "未找到必需命令： ${cmd}"
     return 1
   fi
 }
 
 ps_bootstrap_validate_repo_meta() {
   if [[ "${PS_BOOTSTRAP_GH_USER}" == "<user>" || "${PS_BOOTSTRAP_GH_REPO}" == "<repo>" || "${PS_BOOTSTRAP_GH_BRANCH}" == "<branch>" ]]; then
-    ps_bootstrap_error "GitHub metadata is still placeholder values."
-    ps_bootstrap_error "Set --gh-user, --gh-repo, and --gh-branch (or env vars PS_BOOTSTRAP_GH_*)."
+    ps_bootstrap_error "GitHub 元数据仍为占位符。"
+    ps_bootstrap_error "请设置 --gh-user、--gh-repo、--gh-branch（或环境变量 PS_BOOTSTRAP_GH_*）。"
     return 1
   fi
 }
@@ -177,7 +177,7 @@ ps_bootstrap_load_repo_meta() {
 ps_bootstrap_persist_repo_meta() {
   local source_url="${1:-}"
   if ! ps_bootstrap_has_real_repo_meta "${PS_BOOTSTRAP_GH_USER}" "${PS_BOOTSTRAP_GH_REPO}" "${PS_BOOTSTRAP_GH_BRANCH}"; then
-    ps_bootstrap_info "Skipping metadata persistence because repository metadata is incomplete."
+    ps_bootstrap_info "仓库元数据不完整，跳过保存。"
     return 0
   fi
 
@@ -224,9 +224,9 @@ ps_bootstrap_resolve_repo_meta_for_update() {
   [[ -n "${resolved_branch}" ]] || resolved_branch="${PS_DEFAULT_GH_BRANCH}"
 
   if ! ps_bootstrap_has_real_repo_meta "${resolved_user}" "${resolved_repo}" "${resolved_branch}"; then
-    ps_bootstrap_error "Cannot run update: repository metadata is incomplete."
-    ps_bootstrap_error "Required: --gh-user, --gh-repo, --gh-branch (or persisted metadata in state/repo-meta.conf)."
-    ps_bootstrap_error "Repair metadata with:"
+    ps_bootstrap_error "无法执行 update：仓库元数据不完整。"
+    ps_bootstrap_error "需要：--gh-user、--gh-repo、--gh-branch（或 state/repo-meta.conf 中的已保存元数据）。"
+    ps_bootstrap_error "可用以下命令修复元数据："
     ps_bootstrap_error "  kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>"
     return 1
   fi
@@ -271,7 +271,7 @@ ps_bootstrap_resolve_paths() {
 ps_bootstrap_install_launcher() {
   local launcher_lib="${PS_BOOTSTRAP_INSTALL_DIR}/lib/launcher.sh"
   if [[ ! -f "${launcher_lib}" ]]; then
-    ps_bootstrap_error "Missing launcher helper: ${launcher_lib}"
+    ps_bootstrap_error "缺少启动器辅助文件： ${launcher_lib}"
     return 1
   fi
 
@@ -279,7 +279,7 @@ ps_bootstrap_install_launcher() {
   source "${launcher_lib}"
   ps_launcher_install "${PS_BOOTSTRAP_INSTALL_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}" "install.sh"
   ps_launcher_verify "${PS_BOOTSTRAP_LAUNCHER_PATH}" || {
-    ps_bootstrap_error "Launcher verification failed: ${PS_BOOTSTRAP_LAUNCHER_PATH}"
+    ps_bootstrap_error "启动器校验失败： ${PS_BOOTSTRAP_LAUNCHER_PATH}"
     return 1
   }
 
@@ -305,7 +305,7 @@ ps_bootstrap_sync_repo() {
   local required
   for required in "${required_paths[@]}"; do
     if [[ ! -e "${source_dir}/${required}" ]]; then
-      ps_bootstrap_error "Downloaded project is incomplete, missing: ${required}"
+      ps_bootstrap_error "下载的项目不完整，缺少： ${required}"
       return 1
     fi
   done
@@ -313,8 +313,8 @@ ps_bootstrap_sync_repo() {
   mkdir -p "${PS_BOOTSTRAP_INSTALL_DIR}"
 
   if [[ -f "${PS_BOOTSTRAP_INSTALL_DIR}/lib/common.sh" && "${PS_REMOTE_UPGRADE}" -eq 0 ]]; then
-    ps_bootstrap_error "Install path already contains a proxy-stack project: ${PS_BOOTSTRAP_INSTALL_DIR}"
-    ps_bootstrap_error "Use --upgrade to update the existing installation."
+    ps_bootstrap_error "安装路径已存在 proxy-stack 项目： ${PS_BOOTSTRAP_INSTALL_DIR}"
+    ps_bootstrap_error "请使用 --upgrade 更新已有安装。"
     return 1
   fi
 
@@ -348,23 +348,23 @@ ps_bootstrap_from_github() {
   local archive_file="${tmpdir}/repo.tar.gz"
   local extract_dir="${tmpdir}/extract"
 
-  ps_bootstrap_info "Downloading project archive: ${archive_url}"
+  ps_bootstrap_info "正在下载项目归档： ${archive_url}"
   if ! curl -fsSL "${archive_url}" -o "${archive_file}"; then
     rm -rf "${tmpdir}"
-    ps_bootstrap_error "Download failed: ${archive_url}"
+    ps_bootstrap_error "下载失败： ${archive_url}"
     return 2
   fi
 
   if [[ ! -s "${archive_file}" ]]; then
     rm -rf "${tmpdir}"
-    ps_bootstrap_error "Downloaded archive is empty."
+    ps_bootstrap_error "下载归档为空。"
     return 2
   fi
 
   mkdir -p "${extract_dir}"
   if ! tar -xzf "${archive_file}" -C "${extract_dir}"; then
     rm -rf "${tmpdir}"
-    ps_bootstrap_error "Failed to extract downloaded archive."
+    ps_bootstrap_error "解压下载归档失败。"
     return 2
   fi
 
@@ -372,7 +372,7 @@ ps_bootstrap_from_github() {
   source_dir="$(find "${extract_dir}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
   if [[ -z "${source_dir}" ]]; then
     rm -rf "${tmpdir}"
-    ps_bootstrap_error "Could not locate extracted project directory."
+    ps_bootstrap_error "无法定位解压后的项目目录。"
     return 2
   fi
 
@@ -382,12 +382,12 @@ ps_bootstrap_from_github() {
   }
 
   rm -rf "${tmpdir}"
-  ps_bootstrap_info "Project files synced to ${PS_BOOTSTRAP_INSTALL_DIR}"
+  ps_bootstrap_info "项目文件已同步到 ${PS_BOOTSTRAP_INSTALL_DIR}"
   ps_bootstrap_persist_repo_meta "${archive_url}"
   ps_bootstrap_install_launcher || return 2
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
-    ps_bootstrap_info "Bootstrap-only mode completed."
+    ps_bootstrap_info "仅引导模式已完成。"
     return 0
   fi
 
@@ -397,11 +397,11 @@ ps_bootstrap_from_github() {
   fi
 
   if [[ ! -x "${PS_BOOTSTRAP_INSTALL_DIR}/${entry_script}" ]]; then
-    ps_bootstrap_error "Entry script missing after bootstrap: ${entry_script}"
+    ps_bootstrap_error "引导后缺少入口脚本： ${entry_script}"
     return 2
   fi
 
-  ps_bootstrap_info "Launching ${entry_script}"
+  ps_bootstrap_info "正在启动 ${entry_script}"
   exec bash "${PS_BOOTSTRAP_INSTALL_DIR}/${entry_script}" "${PS_RUNTIME_ARGS[@]}"
 }
 
@@ -461,13 +461,13 @@ ps_run_action() {
   shift || true
 
   if ! "${action}" "$@"; then
-    ps_ui_error "Action failed: ${action}"
+    ps_ui_error "操作失败： ${action}"
   fi
   ps_pause
 }
 
 ps_check_dependencies() {
-  ps_ui_header "Dependency Check"
+  ps_ui_header "依赖检查"
   local required=(jq curl openssl tar sed awk grep)
   local optional=(systemctl ss journalctl base64)
   local cmd
@@ -478,9 +478,9 @@ ps_check_dependencies() {
       printf "[OK] %s\n" "${cmd}"
     else
       if [[ "${cmd}" == "jq" ]]; then
-        printf "[MISSING] %s (required for manifest/state runtime)\n" "${cmd}"
+        printf "[缺失] %s（manifest/state 运行必需）\n" "${cmd}"
       else
-        printf "[MISSING] %s\n" "${cmd}"
+        printf "[缺失] %s\n" "${cmd}"
       fi
       missing=1
     fi
@@ -490,24 +490,24 @@ ps_check_dependencies() {
     if ps_command_exists "${cmd}"; then
       printf "[OK] %s\n" "${cmd}"
     else
-      printf "[WARN] optional tool missing: %s\n" "${cmd}"
+      printf "[警告] 可选工具缺失：%s\n" "${cmd}"
     fi
   done
 
   if [[ "${missing}" -ne 0 ]]; then
-    ps_ui_error "Preflight dependency check failed."
+    ps_ui_error "依赖预检失败。"
     return 1
   fi
 
-  ps_ui_success "Required dependencies are available."
+  ps_ui_success "依赖检查通过。"
   return 0
 }
 
 ps_preflight_checks() {
   if ! ps_check_dependencies; then
     if ! ps_command_exists jq; then
-      ps_ui_error "Blocked: jq-dependent runtime validation/execution cannot run in this environment."
-      printf "Remediation (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y jq\n"
+      ps_ui_error "受限：当前环境无法执行依赖 jq 的运行时校验/操作。"
+      printf "修复命令（Debian/Ubuntu）： sudo apt-get update && sudo apt-get install -y jq\n"
     fi
     return 2
   fi
@@ -521,28 +521,28 @@ ps_preflight_checks() {
 
 ps_menu_uninstall_engines() {
   while true; do
-    ps_ui_menu_select "Uninstall Engines" "Back" "Choose" \
-      "Uninstall xray-core" \
-      "Uninstall sing-box" \
-      "Uninstall both"
+    ps_ui_menu_select "卸载引擎" "返回" "请选择" \
+      "卸载 xray-core" \
+      "卸载 sing-box" \
+      "卸载两者"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_xray_uninstall ;;
       2) ps_run_action ps_singbox_uninstall ;;
       3) ps_run_action ps_xray_uninstall; ps_run_action ps_singbox_uninstall ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_forwarding() {
   while true; do
-    ps_ui_menu_select "Forwarding Management" "Back" "Choose" \
-      "List forwarding entries" \
-      "Create forwarding entry" \
-      "Delete forwarding entry" \
-      "Test route matching"
+    ps_ui_menu_select "转发管理" "返回" "请选择" \
+      "查看转发条目" \
+      "创建转发条目" \
+      "删除转发条目" \
+      "测试路由匹配"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_forward_list ;;
@@ -550,20 +550,20 @@ ps_menu_forwarding() {
       3) ps_run_action ps_forward_delete ;;
       4) ps_run_action ps_route_test_match ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_stack_management() {
   while true; do
-    ps_ui_menu_select "Stack Management" "Back" "Choose" \
-      "List installed stacks" \
-      "Create new stack" \
-      "Edit stack" \
-      "Delete stack" \
-      "Enable/disable stack" \
-      "Re-render config"
+    ps_ui_menu_select "协议栈管理" "返回" "请选择" \
+      "查看已安装协议栈" \
+      "创建新协议栈" \
+      "编辑协议栈" \
+      "删除协议栈" \
+      "启用/禁用协议栈" \
+      "重新渲染配置"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_stack_list ;;
@@ -573,20 +573,20 @@ ps_menu_stack_management() {
       5) ps_run_action ps_stack_toggle ;;
       6) ps_run_action ps_stack_rerender ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_inbound_management() {
   while true; do
-    ps_ui_menu_select "Inbound Management" "Back" "Choose" \
-      "List inbounds" \
-      "Create public server inbound" \
-      "Create local inbound" \
-      "Edit inbound" \
-      "Delete inbound" \
-      "Bind inbound to stack"
+    ps_ui_menu_select "入站管理" "返回" "请选择" \
+      "查看入站" \
+      "创建公网入站" \
+      "创建本地入站" \
+      "编辑入站" \
+      "删除入站" \
+      "绑定入站到协议栈"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_inbound_list ;;
@@ -596,23 +596,23 @@ ps_menu_inbound_management() {
       5) ps_run_action ps_inbound_delete ;;
       6) ps_run_action ps_inbound_bind_stack ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_outbound_routing() {
   while true; do
-    ps_ui_menu_select "Outbounds and Routing" "Back" "Choose" \
-      "List outbounds" \
-      "Create outbound" \
-      "Edit outbound" \
-      "Delete outbound" \
-      "List routing rules" \
-      "Create routing rule" \
-      "Forwarding management (separate module)" \
-      "Reorder routing priority" \
-      "Test route matching"
+    ps_ui_menu_select "出站与路由" "返回" "请选择" \
+      "查看出站" \
+      "创建出站" \
+      "编辑出站" \
+      "删除出站" \
+      "查看路由规则" \
+      "创建路由规则" \
+      "转发管理（独立模块）" \
+      "调整路由优先级" \
+      "测试路由匹配"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_outbound_list ;;
@@ -625,20 +625,20 @@ ps_menu_outbound_routing() {
       8) ps_run_action ps_route_reorder_priority ;;
       9) ps_run_action ps_route_test_match ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_cert_domain() {
   while true; do
-    ps_ui_menu_select "Certificates and Domains" "Back" "Choose" \
-      "List certificates" \
-      "Issue certificate (ACME)" \
-      "Install custom certificate" \
-      "Configure auto-renewal" \
-      "Test renewal" \
-      "Manage SNI / REALITY handshake parameters"
+    ps_ui_menu_select "证书与域名" "返回" "请选择" \
+      "查看证书列表" \
+      "申请证书（ACME）" \
+      "安装自定义证书" \
+      "配置自动续期" \
+      "测试续期" \
+      "管理 SNI / REALITY 握手参数"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_cert_list ;;
@@ -648,22 +648,22 @@ ps_menu_cert_domain() {
       5) ps_run_action ps_cert_test_renewal ;;
       6) ps_run_action ps_cert_manage_reality_params ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_subscribe_export() {
   while true; do
-    ps_ui_menu_select "Subscriptions and Export" "Back" "Choose" \
-      "Generate share links" \
-      "Generate Base64 subscription" \
-      "Export Clash.Meta" \
-      "Export Xray client config" \
-      "Export sing-box client config" \
-      "Export initialized rules bundle" \
-      "Export client config + initialized rules bundle" \
-      "Export local proxy templates with routing"
+    ps_ui_menu_select "订阅与导出" "返回" "请选择" \
+      "生成分享链接" \
+      "生成 Base64 订阅" \
+      "导出 Clash.Meta" \
+      "导出 Xray 客户端配置" \
+      "导出 sing-box 客户端配置" \
+      "导出初始化规则包" \
+      "导出客户端配置 + 初始化规则包" \
+      "导出带路由的本地代理模板"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_sub_generate_share_links ;;
@@ -675,24 +675,24 @@ ps_menu_subscribe_export() {
       7) ps_run_action ps_sub_export_client_with_rules_bundle ;;
       8) ps_run_action ps_sub_export_local_proxy_templates ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_logs_diagnostics() {
   while true; do
-    ps_ui_menu_select "Logs and Diagnostics" "Back" "Choose" \
-      "View installation log" \
-      "View Xray service log" \
-      "View sing-box service log" \
-      "View access log" \
-      "View error log" \
-      "Change log level" \
-      "Toggle DNS logging" \
-      "Configure log rotation" \
-      "Export diagnostic bundle" \
-      "Tail logs in real time"
+    ps_ui_menu_select "日志与诊断" "返回" "请选择" \
+      "查看安装日志" \
+      "查看 Xray 服务日志" \
+      "查看 sing-box 服务日志" \
+      "查看访问日志" \
+      "查看错误日志" \
+      "调整日志级别" \
+      "切换 DNS 日志" \
+      "配置日志轮转" \
+      "导出诊断包" \
+      "实时跟踪日志"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_diag_view_install_log ;;
@@ -706,23 +706,23 @@ ps_menu_logs_diagnostics() {
       9) ps_run_action ps_diag_export_bundle ;;
       10) ps_run_action ps_diag_tail_logs ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_engines_services() {
   while true; do
-    ps_ui_menu_select "Engines and Services" "Back" "Choose" \
-      "Install/upgrade xray-core" \
-      "Install/upgrade sing-box" \
-      "Start services" \
-      "Stop services" \
-      "Restart services" \
-      "Reload config" \
-      "Show versions" \
-      "Uninstall engines" \
-      "Install/update systemd units"
+    ps_ui_menu_select "引擎与服务" "返回" "请选择" \
+      "安装/升级 xray-core" \
+      "安装/升级 sing-box" \
+      "启动服务" \
+      "停止服务" \
+      "重启服务" \
+      "重载配置" \
+      "查看版本" \
+      "卸载引擎" \
+      "安装/更新 systemd 单元"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_xray_install_upgrade ;;
@@ -741,19 +741,19 @@ ps_menu_engines_services() {
       8) ps_menu_uninstall_engines ;;
       9) ps_run_action ps_systemd_install_units ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
 
 ps_menu_backup_restore() {
   while true; do
-    ps_ui_menu_select "Backup and Restore" "Back" "Choose" \
-      "Backup manifest" \
-      "Backup config files" \
-      "Backup certificates" \
-      "Restore backup" \
-      "Roll back to previous version"
+    ps_ui_menu_select "备份与恢复" "返回" "请选择" \
+      "备份 Manifest" \
+      "备份配置文件" \
+      "备份证书" \
+      "恢复备份" \
+      "回滚到上一版本"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_backup_manifest ;;
@@ -762,7 +762,7 @@ ps_menu_backup_restore() {
       4) ps_run_action ps_backup_restore ;;
       5) ps_run_action ps_backup_rollback_previous ;;
       0) break ;;
-      *) ps_ui_warn "Invalid selection"; ps_pause ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
   done
 }
@@ -774,7 +774,7 @@ ps_handle_subcommand() {
   case "${subcommand}" in
     update)
       if [[ "${#}" -gt 0 ]]; then
-        ps_ui_warn "Ignoring extra args for update: $*"
+        ps_ui_warn "update 忽略多余参数： $*"
       fi
       ps_bootstrap_resolve_repo_meta_for_update || return $?
       PS_REMOTE_UPGRADE=1
@@ -799,15 +799,15 @@ ps_handle_subcommand() {
       ;;
     config)
       if [[ "${1:-}" != "repo" ]]; then
-        ps_ui_error "Unsupported config scope: ${1:-<empty>}"
-        printf "Usage: kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
+        ps_ui_error "不支持的 config 范围： ${1:-<empty>}"
+        printf "用法： kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
         return 2
       fi
       ps_configure_repo_metadata
       ;;
     *)
-      ps_ui_error "Unsupported subcommand: ${subcommand}"
-      printf "Supported subcommands: update, export, doctor, logs, info, config repo\n"
+      ps_ui_error "不支持的子命令： ${subcommand}"
+      printf "支持的子命令：update、export、doctor、logs、info、config repo\n"
       return 2
       ;;
   esac
@@ -816,32 +816,32 @@ ps_handle_subcommand() {
 ps_print_runtime_info() {
   local meta_file
   meta_file="$(ps_bootstrap_meta_file)"
-  printf "Install dir: %s\n" "${PS_BOOTSTRAP_INSTALL_DIR}"
+  printf "安装目录： %s\n" "${PS_BOOTSTRAP_INSTALL_DIR}"
   printf "Launcher: %s\n" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
-  printf "Repo metadata file: %s\n" "${meta_file}"
+  printf "仓库元数据文件： %s\n" "${meta_file}"
   if [[ -f "${meta_file}" ]]; then
-    printf "Repo metadata:\n"
+    printf "仓库元数据：\n"
     sed 's/^/  /' "${meta_file}"
   else
-    printf "Repo metadata: <not configured>\n"
+    printf "仓库元数据：<未配置>\n"
   fi
 }
 
 ps_configure_repo_metadata() {
   if ! ps_bootstrap_has_real_repo_meta "${PS_BOOTSTRAP_GH_USER}" "${PS_BOOTSTRAP_GH_REPO}" "${PS_BOOTSTRAP_GH_BRANCH}"; then
-    ps_ui_error "Cannot persist repository metadata from placeholders."
-    printf "Usage: kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
+    ps_ui_error "无法从占位符保存仓库元数据。"
+    printf "用法： kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>\n"
     return 2
   fi
   ps_bootstrap_persist_repo_meta "manual-config"
-  ps_ui_success "Repository metadata saved to $(ps_bootstrap_meta_file)"
+  ps_ui_success "仓库元数据已保存到 $(ps_bootstrap_meta_file)"
 }
 
 ps_ensure_local_launcher() {
   ps_bootstrap_resolve_paths
   ps_launcher_install "${SCRIPT_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}" "install.sh"
   if ! ps_launcher_verify "${PS_BOOTSTRAP_LAUNCHER_PATH}"; then
-    ps_ui_warn "Launcher verification failed: ${PS_BOOTSTRAP_LAUNCHER_PATH}"
+    ps_ui_warn "启动器校验失败： ${PS_BOOTSTRAP_LAUNCHER_PATH}"
     return 1
   fi
   ps_launcher_maybe_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}" "$(ps_bootstrap_path_hint_marker)" "runtime"
@@ -853,12 +853,12 @@ main() {
   ps_ensure_local_launcher || true
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
-    ps_ui_info "Local repository mode detected, bootstrap-only flag has no effect."
+    ps_ui_info "检测到本地仓库模式，bootstrap-only 参数无效。"
     exit 0
   fi
 
   if [[ "${PS_REMOTE_UPGRADE}" -eq 1 ]]; then
-    ps_ui_info "Upgrade flag is intended for remote bootstrap usage. Continuing with local menu mode."
+    ps_ui_info "upgrade 参数用于远程引导，当前继续本地菜单模式。"
   fi
 
   if [[ "${#PS_RUNTIME_ARGS[@]}" -gt 0 ]]; then
@@ -871,20 +871,20 @@ main() {
 
   if [[ "${PS_MODE}" == "forward" ]]; then
     ps_menu_forwarding
-    ps_ui_info "Bye"
+    ps_ui_info "已退出"
     exit 0
   fi
 
   while true; do
-    ps_ui_menu_select "Proxy Stack Main Menu" "Exit" "Choose" \
-      "Stack Management" \
-      "Inbound Management" \
-      "Outbounds and Routing" \
-      "Certificates and Domains" \
-      "Subscriptions and Export" \
-      "Logs and Diagnostics" \
-      "Engines and Services" \
-      "Backup and Restore"
+    ps_ui_menu_select "主菜单" "退出" "请选择" \
+      "协议栈管理" \
+      "入站管理" \
+      "出站与路由" \
+      "证书与域名" \
+      "订阅与导出" \
+      "日志与诊断" \
+      "引擎与服务" \
+      "备份与恢复"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_menu_stack_management ;;
@@ -896,11 +896,11 @@ main() {
       7) ps_menu_engines_services ;;
       8) ps_menu_backup_restore ;;
       0)
-        ps_ui_info "Bye"
+        ps_ui_info "已退出"
         break
         ;;
       *)
-        ps_ui_warn "Invalid selection"
+        ps_ui_warn "选择无效"
         ps_pause
         ;;
     esac

@@ -54,12 +54,12 @@ ps_log_debug() { ps_log debug "$*"; }
 ps_log_info() { ps_log info "$*"; }
 ps_log_warn() { ps_log warn "$*"; }
 ps_log_error() { ps_log error "$*"; }
-ps_log_success() { ps_log info "SUCCESS: $*"; }
+ps_log_success() { ps_log info "成功：$*"; }
 
 ps_tail_file() {
   local file_path="${1:-}"
   if [[ ! -f "${file_path}" ]]; then
-    ps_log_warn "Log file not found: ${file_path}"
+    ps_log_warn "日志文件不存在： ${file_path}"
     return 1
   fi
   tail -n 50 -f "${file_path}"
