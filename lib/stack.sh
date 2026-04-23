@@ -42,7 +42,7 @@ ps_stack_preset_layers() {
 ps_stack_pick_id() {
   mapfile -t rows < <(jq -r '.stacks[] | "\(.stack_id)|\(.name)|\(.engine)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No stacks found."
+    ps_log_warn "未找到协议栈。"
     return 1
   fi
 
@@ -51,14 +51,14 @@ ps_stack_pick_id() {
   printf "\n"
   for row in "${rows[@]}"; do
     IFS='|' read -r stack_id name engine enabled <<<"${row}"
-    printf "%d) %s [%s] enabled=%s\n" "${i}" "${name}" "${engine}" "${enabled}"
+    printf "%d) %s [%s] 启用=%s\n" "${i}" "${name}" "${engine}" "${enabled}"
     i=$((i + 1))
   done
 
   local selected
-  selected="$(ps_prompt_required "Select stack number")"
+  selected="$(ps_prompt_required "请选择协议栈编号")"
   if ! [[ "${selected}" =~ ^[0-9]+$ ]] || ((selected < 1 || selected > ${#rows[@]})); then
-    ps_log_error "Invalid selection."
+    ps_log_error "选择无效。"
     return 1
   fi
 
@@ -67,19 +67,19 @@ ps_stack_pick_id() {
 }
 
 ps_stack_list() {
-  ps_print_header "Installed Stacks"
+  ps_print_header "已安装协议栈"
   jq -r '
     if (.stacks | length) == 0 then
-      "No stacks installed."
+      "未安装任何协议栈。"
     else
       (.stacks[] |
-        "- [\(.stack_id)] \(.name) engine=\(.engine) protocol=\(.protocol) security=\(.security) transport=\(.transport) port=\(.port) enabled=\(.enabled)")
+        "- [\(.stack_id)] \(.name) engine=\(.engine) protocol=\(.protocol) security=\(.security) transport=\(.transport) port=\(.port) 启用=\(.enabled)")
     end
   ' "${PS_MANIFEST}"
 }
 
 ps_stack_create() {
-  ps_print_header "Create New Stack"
+  ps_print_header "创建新协议栈"
   local preset_choice
   local preset_name
   printf "1) VLESS-Vision-TLS\n"
@@ -88,9 +88,9 @@ ps_stack_create() {
   printf "4) VLESS-Reality-XHTTP\n"
   printf "5) Shadowsocks 2022\n"
   printf "6) Shadowsocks 2022-TLS\n"
-  printf "7) Custom template\n"
+  printf "7) 自定义模板\n"
 
-  preset_choice="$(ps_prompt_required "Preset number")"
+  preset_choice="$(ps_prompt_required "预设编号")"
   case "${preset_choice}" in
     1) preset_name="VLESS-Vision-TLS" ;;
     2) preset_name="VLESS-Vision-uTLS-REALITY" ;;
@@ -98,37 +98,37 @@ ps_stack_create() {
     4) preset_name="VLESS-Reality-XHTTP" ;;
     5) preset_name="Shadowsocks 2022" ;;
     6) preset_name="Shadowsocks 2022-TLS" ;;
-    7) preset_name="Custom template" ;;
+    7) preset_name="自定义模板" ;;
     *)
-      ps_log_error "Invalid preset."
+      ps_log_error "预设无效。"
       return 1
       ;;
   esac
 
   local engine
   printf "1) xray\n2) singbox\n"
-  case "$(ps_prompt_required "Engine number")" in
+  case "$(ps_prompt_required "引擎编号")" in
     1) engine="xray" ;;
     2) engine="singbox" ;;
-    *) ps_log_error "Invalid engine."; return 1 ;;
+    *) ps_log_error "引擎无效。"; return 1 ;;
   esac
 
   local layer_json
-  if [[ "${preset_name}" == "Custom template" ]]; then
+  if [[ "${preset_name}" == "自定义模板" ]]; then
     local protocol security transport vision utls flow
-    protocol="$(ps_prompt "Protocol (vless/shadowsocks-2022)" "vless")"
+    protocol="$(ps_prompt "协议（vless/shadowsocks-2022）" "vless")"
 
     if [[ "${protocol}" == "shadowsocks-2022" ]]; then
-      security="$(ps_prompt "Security (none/tls)" "none")"
+      security="$(ps_prompt "安全层（none/tls）" "none")"
       transport="tcp"
       vision="false"
       utls="false"
       flow=""
     else
-      security="$(ps_prompt "Security (tls/reality/none)" "tls")"
-      transport="$(ps_prompt "Transport (tcp/grpc/xhttp)" "tcp")"
-      vision="$(ps_prompt "Vision flow (true/false)" "false")"
-      utls="$(ps_prompt "uTLS enabled (true/false)" "false")"
+      security="$(ps_prompt "安全层（tls/reality/none）" "tls")"
+      transport="$(ps_prompt "传输层（tcp/grpc/xhttp）" "tcp")"
+      vision="$(ps_prompt "Vision 流控（true/false）" "false")"
+      utls="$(ps_prompt "uTLS 开关（true/false）" "false")"
       flow="$(ps_prompt "Flow" "")"
     fi
 
@@ -142,27 +142,27 @@ ps_stack_create() {
   stack_security="$(jq -r '.security' <<<"${layer_json}")"
 
   if [[ "${stack_protocol}" == "shadowsocks-2022" && "${stack_security}" == "reality" ]]; then
-    ps_log_error "Shadowsocks 2022 does not support REALITY in this scaffold. Use none/tls."
+    ps_log_error "当前脚手架下 Shadowsocks 2022 不支持 REALITY，请使用 none/tls。"
     return 1
   fi
 
   if [[ "${stack_protocol}" == "shadowsocks-2022" && "${stack_security}" != "none" && "${stack_security}" != "tls" ]]; then
-    ps_log_error "Invalid SS2022 security: ${stack_security}. Use none/tls."
+    ps_log_error "SS2022 安全层无效： ${stack_security}. 请使用 none/tls。"
     return 1
   fi
 
   local name server port tls_cert_mode
-  name="$(ps_prompt_required "Stack name")"
-  server="$(ps_prompt_required "Server domain/IP")"
-  port="$(ps_prompt_for_port "Server listen port (type a port or press Enter for random)")"
+  name="$(ps_prompt_required "协议栈名称")"
+  server="$(ps_prompt_required "服务器域名/IP")"
+  port="$(ps_prompt_for_port "服务监听端口（输入端口，回车随机）")"
   if ! ps_validate_port "${port}"; then
-    ps_log_error "Invalid port: ${port}"
+    ps_log_error "端口无效： ${port}"
     return 1
   fi
   if [[ "${stack_security}" == "tls" ]]; then
-    tls_cert_mode="$(ps_prompt "TLS cert mode (acme/manual)" "acme")"
+    tls_cert_mode="$(ps_prompt "TLS 证书模式（acme/manual）" "acme")"
     if [[ "${stack_protocol}" == "shadowsocks-2022" && "${engine}" == "singbox" ]]; then
-      ps_log_warn "SS2022+TLS for sing-box may vary by version; renderer will validate before applying."
+      ps_log_warn "sing-box 的 SS2022+TLS 兼容性因版本而异，渲染器会先校验再应用。"
     fi
   else
     tls_cert_mode="none"
@@ -170,8 +170,8 @@ ps_stack_create() {
 
   local client_sni="" client_fingerprint=""
   if [[ "${stack_protocol}" == "vless" ]]; then
-    client_sni="$(ps_prompt "Client SNI (for share links/uTLS)" "${server}")"
-    client_fingerprint="$(ps_prompt "Client fingerprint (chrome/firefox/safari/edge/randomized)" "chrome")"
+    client_sni="$(ps_prompt "客户端 SNI（用于分享链接/uTLS）" "${server}")"
+    client_fingerprint="$(ps_prompt "客户端指纹（chrome/firefox/safari/edge/randomized）" "chrome")"
   fi
 
   local stack_id uuid
@@ -253,22 +253,22 @@ ps_stack_create() {
     }')"
 
   ps_manifest_update --argjson stack "${stack_json}" --arg ts "$(ps_now_iso)" '.stacks += [$stack] | .meta.updated_at = $ts'
-  ps_log_success "Stack created: ${name} (${stack_id})"
+  ps_log_success "协议栈已创建： ${name} (${stack_id})"
 }
 
 ps_stack_edit() {
-  ps_print_header "Edit Stack"
+  ps_print_header "编辑协议栈"
   local stack_id
   stack_id="$(ps_stack_pick_id)" || return 1
 
   local name server port engine cert_mode sni fingerprint
-  name="$(ps_prompt "New name (leave empty to keep)" "")"
-  server="$(ps_prompt "Server domain/IP (leave empty to keep)" "")"
-  port="$(ps_prompt "Port (leave empty to keep)" "")"
-  engine="$(ps_prompt "Engine (xray/singbox, empty to keep)" "")"
-  cert_mode="$(ps_prompt "TLS cert mode (acme/manual/none, empty to keep)" "")"
-  sni="$(ps_prompt "Client SNI (leave empty to keep)" "")"
-  fingerprint="$(ps_prompt "Client fingerprint (leave empty to keep)" "")"
+  name="$(ps_prompt "新名称（留空保持）" "")"
+  server="$(ps_prompt "服务器域名/IP（留空保持）" "")"
+  port="$(ps_prompt "端口（留空保持）" "")"
+  engine="$(ps_prompt "引擎（xray/singbox，留空保持）" "")"
+  cert_mode="$(ps_prompt "TLS 证书模式（acme/manual/none，留空保持）" "")"
+  sni="$(ps_prompt "客户端 SNI（留空保持）" "")"
+  fingerprint="$(ps_prompt "客户端指纹（留空保持）" "")"
 
   local jq_filter='.stacks |= map(if .stack_id == $id then . else . end)'
 
@@ -280,7 +280,7 @@ ps_stack_edit() {
   fi
   if [[ -n "${port}" ]]; then
     if ! ps_validate_port "${port}"; then
-      ps_log_error "Invalid port"
+      ps_log_error "端口无效"
       return 1
     fi
     jq_filter+=' | .stacks |= map(if .stack_id == $id then .port = ($port|tonumber) else . end)'
@@ -311,24 +311,24 @@ ps_stack_edit() {
     --arg fingerprint "${fingerprint}" \
     --arg ts "$(ps_now_iso)" \
     "${jq_filter}"
-  ps_log_success "Stack updated: ${stack_id}"
+  ps_log_success "协议栈已更新： ${stack_id}"
 }
 
 ps_stack_delete() {
-  ps_print_header "Delete Stack"
+  ps_print_header "删除协议栈"
   local stack_id
   stack_id="$(ps_stack_pick_id)" || return 1
-  if ! ps_confirm "Delete stack ${stack_id}?" "N"; then
-    ps_log_info "Cancelled."
+  if ! ps_confirm "删除协议栈 ${stack_id}?" "N"; then
+    ps_log_info "已取消。"
     return 0
   fi
 
   ps_manifest_update --arg id "${stack_id}" --arg ts "$(ps_now_iso)" '.stacks |= map(select(.stack_id != $id)) | .inbounds |= map(if .stack_id == $id then .stack_id = "" else . end) | .meta.updated_at = $ts'
-  ps_log_success "Stack deleted: ${stack_id}"
+  ps_log_success "协议栈已删除： ${stack_id}"
 }
 
 ps_stack_toggle() {
-  ps_print_header "Enable/Disable Stack"
+  ps_print_header "启用/禁用协议栈"
   local stack_id
   stack_id="$(ps_stack_pick_id)" || return 1
 
@@ -340,13 +340,13 @@ ps_stack_toggle() {
   fi
 
   ps_manifest_update --arg id "${stack_id}" --argjson enabled "${target}" --arg ts "$(ps_now_iso)" '.stacks |= map(if .stack_id == $id then .enabled = $enabled | .updated_at = $ts else . end) | .meta.updated_at = $ts'
-  ps_log_success "Stack ${stack_id} enabled=${target}"
+  ps_log_success "协议栈 ${stack_id} 启用=${target}"
 }
 
 ps_stack_rerender() {
   if declare -F ps_render_all >/dev/null 2>&1; then
     ps_render_all
   else
-    ps_log_warn "Render module not loaded."
+    ps_log_warn "渲染模块未加载。"
   fi
 }

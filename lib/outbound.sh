@@ -15,7 +15,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
 ps_outbound_pick_tag() {
   mapfile -t rows < <(jq -r '.outbounds[] | "\(.tag)|\(.type)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No outbound found."
+    ps_log_warn "未找到出站。"
     return 1
   fi
 
@@ -23,14 +23,14 @@ ps_outbound_pick_tag() {
   printf "\n"
   for row in "${rows[@]}"; do
     IFS='|' read -r tag type enabled <<<"${row}"
-    printf "%d) %s type=%s enabled=%s\n" "${i}" "${tag}" "${type}" "${enabled}"
+    printf "%d) %s type=%s 启用=%s\n" "${i}" "${tag}" "${type}" "${enabled}"
     i=$((i + 1))
   done
 
   local choice
-  choice="$(ps_prompt_required "Select outbound number")"
+  choice="$(ps_prompt_required "请选择出站编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "Invalid outbound selection"
+    ps_log_error "出站选择无效"
     return 1
   fi
 
@@ -39,30 +39,30 @@ ps_outbound_pick_tag() {
 }
 
 ps_outbound_list() {
-  ps_print_header "Outbound List"
+  ps_print_header "出站列表"
   jq -r '
     if (.outbounds | length) == 0 then
-      "No outbounds configured."
+      "未配置出站。"
     else
       (.outbounds[] |
-        "- \(.tag) type=\(.type) server=\(.server // "-"):\(.port // "-") enabled=\(.enabled)")
+        "- \(.tag) type=\(.type) server=\(.server // "-"):\(.port // "-") 启用=\(.enabled)")
     end
   ' "${PS_MANIFEST}"
 }
 
 ps_outbound_create() {
-  ps_print_header "Create Outbound"
+  ps_print_header "创建出站"
   printf "1) direct\n"
   printf "2) block\n"
   printf "3) dns\n"
-  printf "4) socks5 upstream\n"
-  printf "5) http upstream\n"
-  printf "6) vless remote\n"
-  printf "7) shadowsocks remote\n"
-  printf "8) selector (sing-box preferred)\n"
+  printf "4) socks5 上游\n"
+  printf "5) http 上游\n"
+  printf "6) vless 远端\n"
+  printf "7) shadowsocks 远端\n"
+  printf "8) selector（优先 sing-box）\n"
 
   local kind type
-  kind="$(ps_prompt_required "Outbound type number")"
+  kind="$(ps_prompt_required "出站类型编号")"
   case "${kind}" in
     1) type="direct" ;;
     2) type="block" ;;
@@ -72,7 +72,7 @@ ps_outbound_create() {
     6) type="vless" ;;
     7) type="shadowsocks" ;;
     8) type="selector" ;;
-    *) ps_log_error "Invalid outbound type"; return 1 ;;
+    *) ps_log_error "出站类型无效"; return 1 ;;
   esac
 
   local default_tag="${type}-$(ps_generate_id out | awk -F'-' '{print $NF}')"
@@ -80,40 +80,40 @@ ps_outbound_create() {
   if [[ "${type}" == "direct" || "${type}" == "block" || "${type}" == "dns" ]]; then
     default_tag="${type}"
   fi
-  tag="$(ps_prompt "Outbound tag" "${default_tag}")"
+  tag="$(ps_prompt "出站标签" "${default_tag}")"
 
   if ps_manifest_array_has '.outbounds' 'tag' "${tag}"; then
-    ps_log_error "Outbound tag already exists: ${tag}"
+    ps_log_error "出站标签 already exists: ${tag}"
     return 1
   fi
 
   local server="" port="0" username="" password="" network="tcp" sni="" fingerprint="" uuid="" method="" members_json='[]'
   if [[ "${type}" =~ ^(socks5|http|vless|shadowsocks)$ ]]; then
-    server="$(ps_prompt_required "Remote server")"
-    port="$(ps_prompt_for_port "Remote port (type a port or press Enter for random)")"
+    server="$(ps_prompt_required "远端服务器")"
+    port="$(ps_prompt_for_port "远端端口（输入端口，回车随机）")"
     if ! ps_validate_port "${port}"; then
-      ps_log_error "Invalid port"
+      ps_log_error "端口无效"
       return 1
     fi
   fi
 
   case "${type}" in
     socks5|http)
-      username="$(ps_prompt "Username (optional)" "")"
-      password="$(ps_prompt "Password (optional)" "")"
+      username="$(ps_prompt "用户名（可选）" "")"
+      password="$(ps_prompt "密码（可选）" "")"
       ;;
     vless)
       uuid="$(ps_prompt "UUID" "$(ps_generate_uuid)")"
       sni="$(ps_prompt "SNI" "${server}")"
-      fingerprint="$(ps_prompt "Fingerprint (chrome/firefox/safari/edge/randomized)" "chrome")"
-      network="$(ps_prompt "Network (tcp/grpc/ws)" "tcp")"
+      fingerprint="$(ps_prompt "指纹（chrome/firefox/safari/edge/randomized）" "chrome")"
+      network="$(ps_prompt "网络（tcp/grpc/ws）" "tcp")"
       ;;
     shadowsocks)
-      method="$(ps_prompt "Method" "2022-blake3-aes-128-gcm")"
-      password="$(ps_prompt "Password" "$(ps_generate_ss2022_password)")"
+      method="$(ps_prompt "加密方法" "2022-blake3-aes-128-gcm")"
+      password="$(ps_prompt "密码" "$(ps_generate_ss2022_password)")"
       ;;
     selector)
-      members_json="$(ps_csv_to_json_array "$(ps_prompt "Members (comma separated outbound tags)" "direct,block")")"
+      members_json="$(ps_csv_to_json_array "$(ps_prompt "成员（出站标签，逗号分隔）" "direct,block")")"
       ;;
   esac
 
@@ -151,26 +151,26 @@ ps_outbound_create() {
     }')"
 
   ps_manifest_update --argjson outbound "${outbound_json}" --arg ts "$(ps_now_iso)" '.outbounds += [$outbound] | .meta.updated_at = $ts'
-  ps_log_success "Outbound created: ${tag}"
+  ps_log_success "出站已创建： ${tag}"
 }
 
 ps_outbound_edit() {
-  ps_print_header "Edit Outbound"
+  ps_print_header "编辑出站"
   local tag
   tag="$(ps_outbound_pick_tag)" || return 1
 
   local new_server new_port username password network sni fingerprint enabled
-  new_server="$(ps_prompt "Server (empty to keep)" "")"
-  new_port="$(ps_prompt "Port (empty to keep)" "")"
-  username="$(ps_prompt "Username (empty to keep)" "")"
-  password="$(ps_prompt "Password (empty to keep)" "")"
-  network="$(ps_prompt "Network (empty to keep)" "")"
-  sni="$(ps_prompt "SNI (empty to keep)" "")"
-  fingerprint="$(ps_prompt "Fingerprint (empty to keep)" "")"
-  enabled="$(ps_prompt "Enabled true/false (empty to keep)" "")"
+  new_server="$(ps_prompt "服务器（留空保持）" "")"
+  new_port="$(ps_prompt "端口（留空保持）" "")"
+  username="$(ps_prompt "用户名（留空保持）" "")"
+  password="$(ps_prompt "密码 (empty to keep)" "")"
+  network="$(ps_prompt "网络（留空保持）" "")"
+  sni="$(ps_prompt "SNI（留空保持）" "")"
+  fingerprint="$(ps_prompt "指纹（留空保持）" "")"
+  enabled="$(ps_prompt "启用状态 true/false（留空保持）" "")"
 
   if [[ -n "${new_port}" ]] && ! ps_validate_port "${new_port}"; then
-    ps_log_error "Invalid port"
+    ps_log_error "端口无效"
     return 1
   fi
 
@@ -199,24 +199,24 @@ ps_outbound_edit() {
     --arg ts "$(ps_now_iso)" \
     "${jq_filter}"
 
-  ps_log_success "Outbound updated: ${tag}"
+  ps_log_success "出站已更新： ${tag}"
 }
 
 ps_outbound_delete() {
-  ps_print_header "Delete Outbound"
+  ps_print_header "删除出站"
   local tag
   tag="$(ps_outbound_pick_tag)" || return 1
 
   if [[ "${tag}" == "direct" || "${tag}" == "block" || "${tag}" == "dns-out" ]]; then
-    ps_log_warn "Builtin outbound cannot be deleted: ${tag}"
+    ps_log_warn "内置出站不可删除： ${tag}"
     return 1
   fi
 
-  if ! ps_confirm "Delete outbound ${tag}?" "N"; then
-    ps_log_info "Cancelled"
+  if ! ps_confirm "删除出站 ${tag}?" "N"; then
+    ps_log_info "已取消"
     return 0
   fi
 
   ps_manifest_update --arg tag "${tag}" --arg ts "$(ps_now_iso)" '.outbounds |= map(select(.tag != $tag)) | .routes |= map(if .outbound == $tag then .outbound = "direct" else . end) | .meta.updated_at = $ts'
-  ps_log_success "Outbound deleted: ${tag}"
+  ps_log_success "出站已删除： ${tag}"
 }

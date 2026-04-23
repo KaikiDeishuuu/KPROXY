@@ -51,11 +51,11 @@ ps_print_header() {
 }
 
 ps_pause() {
-  read -r -p "Press Enter to continue..." _
+  read -r -p "按回车键继续..." _
 }
 
 ps_prompt() {
-  local message="${1:-Input}" 
+  local message="${1:-输入}" 
   local default_value="${2:-}" 
   local value
 
@@ -70,7 +70,7 @@ ps_prompt() {
 }
 
 ps_prompt_required() {
-  local message="${1:-Input required}" 
+  local message="${1:-请输入内容}" 
   local value
   while true; do
     read -r -p "${message}: " value
@@ -78,12 +78,12 @@ ps_prompt_required() {
       printf "%s" "${value}"
       return 0
     fi
-    printf "Value cannot be empty.\n" >&2
+    printf "输入不能为空。\n" >&2
   done
 }
 
 ps_confirm() {
-  local message="${1:-Are you sure?}" 
+  local message="${1:-确认执行吗？}" 
   local default_choice="${2:-N}"
   local answer
 
@@ -107,7 +107,7 @@ ps_require_cmds() {
   local missing=0
   for cmd in "$@"; do
     if ! ps_command_exists "${cmd}"; then
-      printf "Missing dependency: %s\n" "${cmd}" >&2
+      printf "缺少依赖： %s\n" "${cmd}" >&2
       missing=1
     fi
   done
@@ -119,9 +119,9 @@ ps_require_jq() {
     return 0
   fi
 
-  printf "ERROR: Required dependency missing: jq\n" >&2
-  printf "jq is required for manifest state operations and all jq-dependent runtime actions.\n" >&2
-  printf "Debian/Ubuntu remediation: sudo apt-get update && sudo apt-get install -y jq\n" >&2
+  printf "错误：缺少必需依赖 jq\n" >&2
+  printf "manifest 状态操作与所有依赖 jq 的运行时功能都需要 jq。\n" >&2
+  printf "Debian/Ubuntu 安装命令： sudo apt-get update && sudo apt-get install -y jq\n" >&2
   return 2
 }
 
@@ -212,7 +212,7 @@ JSON
   fi
 
   if ! jq . "${PS_MANIFEST}" >/dev/null 2>&1; then
-    printf "Manifest is invalid JSON: %s\n" "${PS_MANIFEST}" >&2
+    printf "manifest JSON 无效： %s\n" "${PS_MANIFEST}" >&2
     return 1
   fi
 
@@ -348,26 +348,26 @@ ps_prompt_for_port() {
   local input
 
   while true; do
-    read -r -p "${message} [Enter=random available port]: " input
+    read -r -p "${message} [直接回车=随机可用端口]: " input
 
     if [[ -z "${input}" ]]; then
       local assigned
       assigned="$(ps_generate_safe_random_port "${start}" "${end}")" || {
-        printf "Unable to find a safe random port.\n" >&2
+        printf "无法找到安全的随机端口。\n" >&2
         return 1
       }
-      printf "Assigned random available port: %s\n" "${assigned}" >&2
+      printf "已分配随机可用端口： %s\n" "${assigned}" >&2
       printf "%s" "${assigned}"
       return 0
     fi
 
     if ! ps_validate_port "${input}"; then
-      printf "Invalid port: %s\n" "${input}" >&2
+      printf "端口无效： %s\n" "${input}" >&2
       continue
     fi
 
     if ps_port_is_in_use "${input}"; then
-      printf "Port %s is occupied or already recorded in manifest. Choose another.\n" "${input}" >&2
+      printf "端口 %s 已被占用或已记录在 manifest 中，请更换。\n" "${input}" >&2
       continue
     fi
 

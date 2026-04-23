@@ -39,7 +39,7 @@ ps_singbox_update_manifest_status() {
 ps_singbox_install_upgrade() {
   ps_print_header "Install/Upgrade sing-box"
   if ! ps_is_root; then
-    ps_log_error "Root permission required for sing-box installation"
+    ps_log_error "安装 sing-box 需要 root 权限"
     return 1
   fi
 
@@ -47,29 +47,29 @@ ps_singbox_install_upgrade() {
     apt-get update
     if apt-get install -y sing-box; then
       ps_singbox_update_manifest_status
-      ps_log_success "sing-box installed/upgraded via apt"
+      ps_log_success "已通过 apt 安装/升级 sing-box"
       return 0
     fi
   fi
 
-  ps_log_warn "Apt install failed or unavailable."
-  ps_log_warn "TODO: Add repository bootstrap for distributions without sing-box package."
+  ps_log_warn "apt 安装失败或不可用。"
+  ps_log_warn "TODO：为无 sing-box 软件包的发行版增加仓库引导安装。"
   return 1
 }
 
 ps_singbox_validate_config() {
   local config_path="${1:-${PS_SINGBOX_CONFIG}}"
   if ! ps_command_exists sing-box; then
-    ps_log_warn "sing-box not installed, skip validation"
+    ps_log_warn "sing-box 未安装，跳过校验"
     return 0
   fi
 
   if sing-box check -c "${config_path}" >/dev/null 2>&1; then
-    ps_log_success "sing-box config is valid"
+    ps_log_success "sing-box 配置校验通过"
     return 0
   fi
 
-  ps_log_error "sing-box config validation failed: ${config_path}"
+  ps_log_error "sing-box 配置校验失败： ${config_path}"
   return 1
 }
 
@@ -92,21 +92,21 @@ ps_singbox_reload() {
 ps_singbox_show_version() {
   ps_print_header "sing-box Version"
   if ! ps_command_exists sing-box; then
-    ps_log_warn "sing-box not installed"
+    ps_log_warn "sing-box 未安装"
     return 1
   fi
   sing-box version
 }
 
 ps_singbox_uninstall() {
-  ps_print_header "Uninstall sing-box"
-  if ! ps_confirm "Uninstall sing-box now?" "N"; then
-    ps_log_info "Cancelled"
+  ps_print_header "卸载 sing-box"
+  if ! ps_confirm "现在卸载 sing-box 吗？" "N"; then
+    ps_log_info "已取消"
     return 0
   fi
 
   if ! ps_is_root; then
-    ps_log_error "Root permission required"
+    ps_log_error "需要 root 权限"
     return 1
   fi
 
@@ -116,5 +116,5 @@ ps_singbox_uninstall() {
   fi
 
   ps_singbox_update_manifest_status
-  ps_log_success "sing-box uninstall completed"
+  ps_log_success "sing-box 卸载完成"
 }

@@ -30,7 +30,7 @@ ps_systemd_render_unit() {
 }
 
 ps_systemd_install_units() {
-  ps_print_header "Install systemd Units"
+  ps_print_header "安装 systemd 单元"
 
   local xray_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-xray.service.tpl"
   local singbox_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-singbox.service.tpl"
@@ -38,7 +38,7 @@ ps_systemd_install_units() {
   local singbox_unit="${PS_SYSTEMD_DIR}/${PS_SINGBOX_SERVICE}.service"
 
   if [[ ! -f "${xray_tpl}" || ! -f "${singbox_tpl}" ]]; then
-    ps_log_error "Missing systemd template files"
+    ps_log_error "缺少 systemd 模板文件"
     return 1
   fi
 
@@ -50,9 +50,9 @@ ps_systemd_install_units() {
     systemctl daemon-reload
     systemctl enable "${PS_XRAY_SERVICE}" >/dev/null 2>&1 || true
     systemctl enable "${PS_SINGBOX_SERVICE}" >/dev/null 2>&1 || true
-    ps_log_success "Systemd units installed and enabled"
+    ps_log_success "systemd 单元已安装并启用"
   else
-    ps_log_warn "Systemd unavailable or not root. Units generated under ${PS_SYSTEMD_DIR}"
+    ps_log_warn "systemd 不可用或当前非 root。单元文件已生成到 ${PS_SYSTEMD_DIR}"
   fi
 }
 
@@ -61,11 +61,11 @@ ps_systemd_service_action() {
   local service="${2}"
 
   if ! ps_systemd_is_available; then
-    ps_log_warn "systemctl not available"
+    ps_log_warn "systemctl 不可用"
     return 1
   fi
   if ! ps_is_root; then
-    ps_log_error "Root permission required for systemctl ${action}"
+    ps_log_error "执行 systemctl 需要 root 权限：${action}"
     return 1
   fi
 
@@ -75,31 +75,31 @@ ps_systemd_service_action() {
 ps_systemd_start_services() {
   ps_systemd_service_action start "${PS_XRAY_SERVICE}" || true
   ps_systemd_service_action start "${PS_SINGBOX_SERVICE}" || true
-  ps_log_info "Start command sent"
+  ps_log_info "已发送启动命令"
 }
 
 ps_systemd_stop_services() {
   ps_systemd_service_action stop "${PS_XRAY_SERVICE}" || true
   ps_systemd_service_action stop "${PS_SINGBOX_SERVICE}" || true
-  ps_log_info "Stop command sent"
+  ps_log_info "已发送停止命令"
 }
 
 ps_systemd_restart_services() {
   ps_systemd_service_action restart "${PS_XRAY_SERVICE}" || true
   ps_systemd_service_action restart "${PS_SINGBOX_SERVICE}" || true
-  ps_log_info "Restart command sent"
+  ps_log_info "已发送重启命令"
 }
 
 ps_systemd_reload_services() {
   ps_systemd_service_action reload "${PS_XRAY_SERVICE}" || true
   ps_systemd_service_action reload "${PS_SINGBOX_SERVICE}" || true
-  ps_log_info "Reload command sent"
+  ps_log_info "已发送重载命令"
 }
 
 ps_systemd_status() {
-  ps_print_header "Service Status"
+  ps_print_header "服务状态"
   if ! ps_systemd_is_available; then
-    ps_log_warn "systemctl not available"
+    ps_log_warn "systemctl 不可用"
     return 1
   fi
 

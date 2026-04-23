@@ -15,7 +15,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
 ps_forward_pick_id() {
   mapfile -t rows < <(jq -r '.forwardings[]? | "\(.forward_id)|\(.name)|\(.inbound_tag)|\(.outbound_tag)|\(.listen_port)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No forwarding entries found."
+    ps_log_warn "未找到转发条目。"
     return 1
   fi
 
@@ -23,14 +23,14 @@ ps_forward_pick_id() {
   printf "\n"
   for row in "${rows[@]}"; do
     IFS='|' read -r fid name inbound_tag outbound_tag listen_port enabled <<<"${row}"
-    printf "%d) %s id=%s listen=%s outbound=%s enabled=%s\n" "${i}" "${name}" "${fid}" "${listen_port}" "${outbound_tag}" "${enabled}"
+    printf "%d) %s id=%s listen=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${fid}" "${listen_port}" "${outbound_tag}" "${enabled}"
     i=$((i + 1))
   done
 
   local choice
-  choice="$(ps_prompt_required "Select forwarding number")"
+  choice="$(ps_prompt_required "请选择转发编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "Invalid forwarding selection"
+    ps_log_error "转发选择无效"
     return 1
   fi
 
@@ -41,7 +41,7 @@ ps_forward_pick_id() {
 ps_forward_pick_existing_outbound() {
   mapfile -t rows < <(jq -r '.outbounds[]? | select(.enabled != false) | "\(.tag)|\(.type)|\(.server // "-")|\(.port // 0)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "No enabled outbounds found."
+    ps_log_warn "未找到已启用的出站。"
     return 1
   fi
 
@@ -53,9 +53,9 @@ ps_forward_pick_existing_outbound() {
   done
 
   local choice
-  choice="$(ps_prompt_required "Select outbound number")"
+  choice="$(ps_prompt_required "请选择出站编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "Invalid outbound selection"
+    ps_log_error "出站选择无效"
     return 1
   fi
 
@@ -80,13 +80,13 @@ ps_forward_create_new_outbound_json() {
 
   printf "1) direct\n"
   printf "2) block\n"
-  printf "3) socks5 upstream\n"
-  printf "4) http upstream\n"
-  printf "5) vless remote\n"
-  printf "6) shadowsocks remote\n"
+  printf "3) socks5 上游\n"
+  printf "4) http 上游\n"
+  printf "5) vless 远端\n"
+  printf "6) shadowsocks 远端\n"
 
   local type_choice type
-  type_choice="$(ps_prompt_required "New outbound type number")"
+  type_choice="$(ps_prompt_required "新出站类型编号")"
   case "${type_choice}" in
     1) type="direct" ;;
     2) type="block" ;;
@@ -94,30 +94,30 @@ ps_forward_create_new_outbound_json() {
     4) type="http" ;;
     5) type="vless" ;;
     6) type="shadowsocks" ;;
-    *) ps_log_error "Invalid outbound type"; return 1 ;;
+    *) ps_log_error "出站类型无效"; return 1 ;;
   esac
 
   local tag server="" port="0" username="" password="" network="tcp" sni="" uuid="" method=""
   tag="$(ps_forward_generate_unique_outbound_tag "fwd-${type}")"
 
   if [[ "${type}" =~ ^(socks5|http|vless|shadowsocks)$ ]]; then
-    server="$(ps_prompt_required "Target server")"
-    port="$(ps_prompt_for_port "Target port (type a port or press Enter for random)")"
+    server="$(ps_prompt_required "目标服务器")"
+    port="$(ps_prompt_for_port "目标端口（输入端口，回车随机）")"
   fi
 
   case "${type}" in
     socks5|http)
-      username="$(ps_prompt "Username (optional)" "")"
-      password="$(ps_prompt "Password (optional)" "")"
+      username="$(ps_prompt "用户名（可选）" "")"
+      password="$(ps_prompt "密码（可选）" "")"
       ;;
     vless)
       uuid="$(ps_prompt "UUID" "$(ps_generate_uuid)")"
       sni="$(ps_prompt "SNI" "${server}")"
-      network="$(ps_prompt "Network (tcp/grpc/ws)" "tcp")"
+      network="$(ps_prompt "网络（tcp/grpc/ws）" "tcp")"
       ;;
     shadowsocks)
-      method="$(ps_prompt "Method" "2022-blake3-aes-128-gcm")"
-      password="$(ps_prompt "Password" "$(ps_generate_ss2022_password)")"
+      method="$(ps_prompt "加密方法" "2022-blake3-aes-128-gcm")"
+      password="$(ps_prompt "密码" "$(ps_generate_ss2022_password)")"
       ;;
   esac
 
@@ -154,43 +154,43 @@ ps_forward_create_new_outbound_json() {
 }
 
 ps_forward_list() {
-  ps_print_header "Forwarding Entries"
+  ps_print_header "转发条目"
   jq -r '
     if (.forwardings | length) == 0 then
-      "No forwarding entries configured."
+      "未配置转发条目。"
     else
       (.forwardings[] |
-        "- [\(.forward_id)] \(.name) inbound=\(.inbound_tag)(\(.listen):\(.listen_port)) outbound=\(.outbound_tag) target=\(.target_host // "-"):\(.target_port // 0) network=\(.network|join(",")) enabled=\(.enabled)")
+        "- [\(.forward_id)] \(.name) inbound=\(.inbound_tag)(\(.listen):\(.listen_port)) outbound=\(.outbound_tag) target=\(.target_host // "-"):\(.target_port // 0) network=\(.network|join(",")) 启用=\(.enabled)")
     end
   ' "${PS_MANIFEST}"
 }
 
 ps_forward_create() {
-  ps_print_header "Create Forwarding Entry"
+  ps_print_header "创建转发条目"
 
   local forward_id name inbound_type listen listen_port udp priority network_mode network_csv
   forward_id="$(ps_generate_id fwd)"
-  name="$(ps_prompt "Forwarding name" "forward-${forward_id}")"
+  name="$(ps_prompt "转发名称" "forward-${forward_id}")"
 
   printf "1) SOCKS5\n2) HTTP\n3) Mixed\n"
-  case "$(ps_prompt_required "Local inbound type number")" in
+  case "$(ps_prompt_required "本地入站类型编号")" in
     1) inbound_type="socks" ;;
     2) inbound_type="http" ;;
     3) inbound_type="mixed" ;;
-    *) ps_log_error "Invalid inbound type"; return 1 ;;
+    *) ps_log_error "入站类型无效"; return 1 ;;
   esac
 
-  listen="$(ps_prompt "Local listen address" "127.0.0.1")"
-  listen_port="$(ps_prompt_for_port "Local listen port (type a port or press Enter for random)")"
-  udp="$(ps_prompt "Enable UDP (true/false)" "true")"
-  priority="$(ps_prompt "Route priority (lower first)" "90")"
+  listen="$(ps_prompt "本地监听地址" "127.0.0.1")"
+  listen_port="$(ps_prompt_for_port "本地监听端口（输入端口，回车随机）")"
+  udp="$(ps_prompt "启用 UDP（true/false）" "true")"
+  priority="$(ps_prompt "路由优先级（越小越优先）" "90")"
 
   if ! [[ "${priority}" =~ ^[0-9]+$ ]]; then
-    ps_log_error "Invalid priority"
+    ps_log_error "优先级无效"
     return 1
   fi
 
-  network_mode="$(ps_prompt "Network (tcp/udp/both)" "both")"
+  network_mode="$(ps_prompt "网络（tcp/udp/both）" "both")"
   case "${network_mode}" in
     tcp|TCP) network_csv="tcp" ;;
     udp|UDP) network_csv="udp" ;;
@@ -199,8 +199,8 @@ ps_forward_create() {
   esac
 
   local outbound_choice outbound_tag outbound_json="" target_host="" target_port="0"
-  printf "1) Use existing outbound\n2) Create outbound for this forwarding\n"
-  outbound_choice="$(ps_prompt_required "Choice")"
+  printf "1) 使用现有出站\n2) 为该转发创建出站\n"
+  outbound_choice="$(ps_prompt_required "请选择")"
   case "${outbound_choice}" in
     1)
       outbound_tag="$(ps_forward_pick_existing_outbound)" || return 1
@@ -214,7 +214,7 @@ ps_forward_create() {
       target_port="$(jq -r '.port // 0' <<<"${outbound_json}")"
       ;;
     *)
-      ps_log_error "Invalid choice"
+      ps_log_error "选择无效"
       return 1
       ;;
   esac
@@ -283,19 +283,19 @@ ps_forward_create() {
   ps_manifest_update --argjson route "${route_json}" --arg ts "$(ps_now_iso)" '.routes += [$route] | .meta.updated_at = $ts'
   ps_manifest_update --argjson forwarding "${forwarding_json}" --arg ts "$(ps_now_iso)" '.forwardings += [$forwarding] | .meta.updated_at = $ts'
 
-  ps_log_success "Forwarding created: ${name}"
-  ps_log_info "Forwarding listen endpoint: ${listen}:${listen_port}"
-  ps_log_info "Forwarding outbound: ${outbound_tag} (${target_host}:${target_port})"
+  ps_log_success "转发已创建： ${name}"
+  ps_log_info "转发监听地址： ${listen}:${listen_port}"
+  ps_log_info "转发出站： ${outbound_tag} (${target_host}:${target_port})"
 }
 
 ps_forward_delete() {
-  ps_print_header "Delete Forwarding Entry"
+  ps_print_header "删除转发条目"
 
   local forward_id
   forward_id="$(ps_forward_pick_id)" || return 1
 
-  if ! ps_confirm "Delete forwarding ${forward_id} and managed inbound/route/outbound?" "N"; then
-    ps_log_info "Cancelled"
+  if ! ps_confirm "删除转发 ${forward_id} 及关联入站/路由/出站吗？" "N"; then
+    ps_log_info "已取消"
     return 0
   fi
 
@@ -307,5 +307,5 @@ ps_forward_delete() {
     | .meta.updated_at = $ts
   '
 
-  ps_log_success "Forwarding deleted: ${forward_id}"
+  ps_log_success "转发已删除： ${forward_id}"
 }
