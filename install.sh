@@ -5,9 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PS_BOOTSTRAP_INSTALL_DIR="${PS_BOOTSTRAP_INSTALL_DIR:-}"
 PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=0
-PS_DEFAULT_GH_USER="${PS_BOOTSTRAP_GH_USER:-<user>}"
-PS_DEFAULT_GH_REPO="${PS_BOOTSTRAP_GH_REPO:-<repo>}"
-PS_DEFAULT_GH_BRANCH="${PS_BOOTSTRAP_GH_BRANCH:-<branch>}"
+DEFAULT_GH_USER="KaikiDeishuuu"
+DEFAULT_GH_REPO="KPROXY"
+DEFAULT_GH_BRANCH="main"
+PS_DEFAULT_GH_USER="${PS_BOOTSTRAP_GH_USER:-${DEFAULT_GH_USER}}"
+PS_DEFAULT_GH_REPO="${PS_BOOTSTRAP_GH_REPO:-${DEFAULT_GH_REPO}}"
+PS_DEFAULT_GH_BRANCH="${PS_BOOTSTRAP_GH_BRANCH:-${DEFAULT_GH_BRANCH}}"
 PS_BOOTSTRAP_GH_USER="${PS_DEFAULT_GH_USER}"
 PS_BOOTSTRAP_GH_REPO="${PS_DEFAULT_GH_REPO}"
 PS_BOOTSTRAP_GH_BRANCH="${PS_DEFAULT_GH_BRANCH}"
@@ -45,10 +48,10 @@ Subcommands:
   config repo                Persist repository metadata for future updates
 
 Remote install example:
-  bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh)
+  bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
 
 Forward-only remote launch:
-  bash <(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/install.sh) --mode forward
+  bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) --mode forward
 EOF
 }
 
