@@ -153,7 +153,7 @@ ps_stack_create() {
 
   local name server port tls_cert_mode
   name="$(ps_prompt_required "协议栈名称")"
-  server="$(ps_prompt_required "服务器域名/IP")"
+  server="$(ps_prompt_public_address "节点对外地址（用于订阅与分享，直接回车使用自动检测值）")"
   port="$(ps_prompt_for_port "服务监听端口（输入端口，回车随机）")"
   if ! ps_validate_port "${port}"; then
     ps_log_error "端口无效： ${port}"
@@ -263,7 +263,7 @@ ps_stack_edit() {
 
   local name server port engine cert_mode sni fingerprint
   name="$(ps_prompt "新名称（留空保持）" "")"
-  server="$(ps_prompt "服务器域名/IP（留空保持）" "")"
+  server="$(ps_prompt "节点对外地址（用于订阅与分享，留空保持）" "")"
   port="$(ps_prompt "端口（留空保持）" "")"
   engine="$(ps_prompt "引擎（xray/singbox，留空保持）" "")"
   cert_mode="$(ps_prompt "TLS 证书模式（acme/manual/none，留空保持）" "")"

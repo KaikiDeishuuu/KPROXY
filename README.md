@@ -1,8 +1,8 @@
-# Proxy Stack（中文优先说明）
+# Proxy Stack（中文说明为主）
 
 面向 Linux 服务器的模块化 Bash 代理维护框架，强调**可长期维护**、**状态可追踪**、**导出可复用**，适合个人/小规模自建场景。
 
-> English note: A short English appendix is kept at the end for quick reference. Main documentation is Chinese-first.
+> 说明：本文档以中文为主，安装命令刻意保持最简，仓库覆盖参数仅作为高级选项。
 
 ## 1. 项目简介
 
@@ -87,6 +87,7 @@ kprxy update
 - 元数据解析顺序：显式参数 > `state/repo-meta.conf` > 内置默认值（`KaikiDeishuuu/KPROXY@main`）。
 - 查看当前元数据：`kprxy info`
 - 手动修复元数据：`kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>`
+- 如需手动修复启动命令：`kprxy repair-launcher`
 
 ## 8. 卸载
 

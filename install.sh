@@ -43,6 +43,7 @@ Proxy 协议栈 安装器/启动器
   update                     同步最新脚本/模板到当前安装目录
   export                     一键导出：客户端配置 + 初始化规则包
   doctor                     执行依赖预检
+  repair-launcher            显式修复/更新 kprxy 启动命令
   logs                       查看安装日志
   info                       显示启动器/安装元数据
   config repo                保存仓库元数据供后续更新使用
@@ -60,31 +61,31 @@ ps_cli_parse_args() {
     case "$1" in
       --install-dir)
         shift
-        [[ $# -gt 0 ]] || { printf "--install-dir 缺少参数值\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf '%s\n' "--install-dir 缺少参数值" >&2; exit 2; }
         PS_BOOTSTRAP_INSTALL_DIR="$1"
         PS_BOOTSTRAP_INSTALL_DIR_EXPLICIT=1
         ;;
       --gh-user)
         shift
-        [[ $# -gt 0 ]] || { printf "--gh-user 缺少参数值\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf '%s\n' "--gh-user 缺少参数值" >&2; exit 2; }
         PS_BOOTSTRAP_GH_USER="$1"
         PS_BOOTSTRAP_GH_USER_EXPLICIT=1
         ;;
       --gh-repo)
         shift
-        [[ $# -gt 0 ]] || { printf "--gh-repo 缺少参数值\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf '%s\n' "--gh-repo 缺少参数值" >&2; exit 2; }
         PS_BOOTSTRAP_GH_REPO="$1"
         PS_BOOTSTRAP_GH_REPO_EXPLICIT=1
         ;;
       --gh-branch)
         shift
-        [[ $# -gt 0 ]] || { printf "--gh-branch 缺少参数值\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf '%s\n' "--gh-branch 缺少参数值" >&2; exit 2; }
         PS_BOOTSTRAP_GH_BRANCH="$1"
         PS_BOOTSTRAP_GH_BRANCH_EXPLICIT=1
         ;;
       --mode)
         shift
-        [[ $# -gt 0 ]] || { printf "--mode 缺少参数值\n" >&2; exit 2; }
+        [[ $# -gt 0 ]] || { printf '%s\n' "--mode 缺少参数值" >&2; exit 2; }
         PS_MODE="$1"
         ;;
       --bootstrap-only)
@@ -789,6 +790,9 @@ ps_handle_subcommand() {
     doctor)
       ps_preflight_checks
       ;;
+    repair-launcher)
+      ps_repair_launcher
+      ;;
     logs)
       ps_preflight_checks || return $?
       ps_init_manifest
@@ -807,7 +811,7 @@ ps_handle_subcommand() {
       ;;
     *)
       ps_ui_error "不支持的子命令： ${subcommand}"
-      printf "支持的子命令：update、export、doctor、logs、info、config repo\n"
+      printf '%s\n' "支持的子命令：update、export、doctor、logs、info、config repo、repair-launcher"
       return 2
       ;;
   esac
@@ -816,9 +820,9 @@ ps_handle_subcommand() {
 ps_print_runtime_info() {
   local meta_file
   meta_file="$(ps_bootstrap_meta_file)"
-  printf "安装目录： %s\n" "${PS_BOOTSTRAP_INSTALL_DIR}"
-  printf "Launcher: %s\n" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
-  printf "仓库元数据文件： %s\n" "${meta_file}"
+  printf '%s\n' "安装目录： ${PS_BOOTSTRAP_INSTALL_DIR}"
+  printf '%s\n' "启动命令路径： ${PS_BOOTSTRAP_LAUNCHER_PATH}"
+  printf '%s\n' "仓库元数据文件： ${meta_file}"
   if [[ -f "${meta_file}" ]]; then
     printf "仓库元数据：\n"
     sed 's/^/  /' "${meta_file}"
@@ -847,10 +851,15 @@ ps_ensure_local_launcher() {
   ps_launcher_maybe_print_path_hint "${PS_BOOTSTRAP_LAUNCHER_PATH}" "$(ps_bootstrap_path_hint_marker)" "runtime"
 }
 
+ps_repair_launcher() {
+  ps_ui_info "正在修复/更新启动命令..."
+  ps_ensure_local_launcher
+  ps_ui_success "启动命令修复完成。"
+}
+
 main() {
   ps_prepare_runtime_dirs
   ps_logger_init
-  ps_ensure_local_launcher || true
 
   if [[ "${PS_BOOTSTRAP_ONLY}" -eq 1 ]]; then
     ps_ui_info "检测到本地仓库模式，bootstrap-only 参数无效。"

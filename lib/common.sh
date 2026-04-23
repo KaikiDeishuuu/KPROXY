@@ -376,6 +376,37 @@ ps_prompt_for_port() {
   done
 }
 
+ps_detect_public_ipv4() {
+  local services=(
+    "https://api.ipify.org"
+    "https://ipv4.icanhazip.com"
+    "https://ifconfig.me/ip"
+  )
+  local svc ip
+  for svc in "${services[@]}"; do
+    ip="$(curl -4fsS --max-time 3 "${svc}" 2>/dev/null | tr -d '\r\n' || true)"
+    if [[ "${ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      printf '%s' "${ip}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ps_prompt_public_address() {
+  local message="${1:-节点对外地址（用于订阅与分享，直接回车使用自动检测值）}"
+  local detected=""
+  detected="$(ps_detect_public_ipv4 || true)"
+  if [[ -n "${detected}" ]]; then
+    ps_log_info "已自动检测公网 IPv4：${detected}"
+    ps_prompt "${message}" "${detected}"
+    return 0
+  fi
+
+  ps_log_warn "自动检测公网 IPv4 失败，请手动输入可被客户端访问的公网域名或 IP。"
+  ps_prompt_required "${message}"
+}
+
 ps_backup_file_if_exists() {
   local file_path="${1}"
   local tag="${2:-file}"

@@ -107,7 +107,7 @@ EOF_LAUNCHER
 
   chmod 0755 "${tmp}"
   mv -f "${tmp}" "${launcher_path}"
-  ps_launcher_log_info "Launcher installed/updated: ${launcher_path}"
+  ps_launcher_log_info "启动命令已安装/更新：${launcher_path}"
 }
 
 ps_launcher_verify() {
