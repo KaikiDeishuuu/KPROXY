@@ -12,6 +12,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 # shellcheck source=lib/crypto.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
 
+PS_STACK_CREATE_ABORTED=0
+PS_STACK_CREATE_ABORT_REASON=""
+
+ps_stack_abort_create() {
+  local reason="${1:-已取消创建}"
+  PS_STACK_CREATE_ABORTED=1
+  PS_STACK_CREATE_ABORT_REASON="${reason}"
+  return 1
+}
+
 ps_stack_preset_layers() {
   local preset="${1}"
   case "${preset}" in
@@ -105,6 +115,8 @@ ps_stack_reality_dest_is_valid() {
 }
 
 ps_stack_create() {
+  PS_STACK_CREATE_ABORTED=0
+  PS_STACK_CREATE_ABORT_REASON=""
   ps_print_header "创建新协议栈"
   local preset_choice
   local preset_name
@@ -252,18 +264,21 @@ ps_stack_create() {
 
     local reality_server_name reality_dest reality_fingerprint default_reality_server_name
     default_reality_server_name="$(ps_stack_reality_default_server_name)"
-    reality_server_name="$(ps_prompt "REALITY 握手目标 serverName（建议常见 HTTPS 域名）" "${default_reality_server_name}")"
-    if [[ -z "${reality_server_name}" ]]; then
-      ps_log_error "REALITY serverName 不能为空。"
-      return 1
-    fi
-    if [[ "${reality_server_name}" == "${server}" ]]; then
-      ps_log_warn "检测到 REALITY serverName 与节点对外地址相同（${server}）。这通常不是推荐设置。"
-      if ! ps_confirm "确认继续使用相同域名作为 REALITY serverName 吗？" "N"; then
-        ps_log_info "已取消，请重新创建并设置合适的 REALITY serverName。"
-        return 1
+    while true; do
+      reality_server_name="$(ps_prompt "REALITY 握手目标 serverName（建议常见 HTTPS 域名）" "${default_reality_server_name}")"
+      if [[ -z "${reality_server_name}" ]]; then
+        ps_log_error "REALITY serverName 不能为空。"
+        continue
       fi
-    fi
+      if [[ "${reality_server_name}" == "${server}" ]]; then
+        ps_log_warn "检测到 REALITY serverName 与节点对外地址相同（${server}）。这通常不是推荐设置。"
+        if ! ps_confirm "确认继续使用相同域名作为 REALITY serverName 吗？" "N"; then
+          ps_log_info "请重新设置 REALITY serverName。"
+          continue
+        fi
+      fi
+      break
+    done
 
     reality_dest="$(ps_prompt "REALITY 握手目标 dest（默认 serverName:443）" "${reality_server_name}:443")"
     if ! ps_stack_reality_dest_is_valid "${reality_dest}"; then
@@ -273,13 +288,25 @@ ps_stack_create() {
 
     local reality_dest_port
     reality_dest_port="$(ps_stack_parse_dest_port "${reality_dest}" || printf "443")"
-    if [[ "${port}" != "443" ]]; then
-      ps_log_warn "REALITY 服务监听端口为 ${port}（非 443），存在被网络策略拦截/封禁风险。"
-      if ! ps_confirm "仍然继续使用非 443 端口创建 REALITY 服务吗？" "N"; then
-        ps_log_info "已取消，请重新选择端口。"
-        return 1
+    while true; do
+      if [[ "${port}" != "443" ]]; then
+        ps_log_warn "REALITY 服务监听端口为 ${port}（非 443），存在被网络策略拦截/封禁风险。"
+        if ! ps_confirm "仍然继续使用非 443 端口创建 REALITY 服务吗？" "N"; then
+          ps_log_info "已取消当前端口，请重新选择。"
+          port="$(ps_prompt_for_port "服务监听端口（建议 443，直接回车=随机可用端口）")"
+          if ! ps_validate_port "${port}"; then
+            ps_log_error "端口无效： ${port}"
+            if ps_confirm "是否放弃本次创建？" "N"; then
+              ps_stack_abort_create "用户取消：REALITY 端口未确认"
+              return 1
+            fi
+            continue
+          fi
+          continue
+        fi
       fi
-    fi
+      break
+    done
     if [[ "${reality_dest_port}" != "443" ]]; then
       ps_log_warn "REALITY dest 端口为 ${reality_dest_port}（非 443），兼容性可能降低。"
     fi

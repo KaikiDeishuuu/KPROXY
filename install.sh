@@ -41,7 +41,7 @@ kprxy 安装器/控制台
 
 子命令：
   update                     同步最新脚本/模板到当前安装目录
-  service-wizard             一键搭建（自动完成模板+入口绑定）
+  service-wizard             一步式创建服务（自动完成模板+入口绑定）
   export                     一键导出：客户端配置 + 初始化规则包（推荐给普通用户）
   doctor                     执行依赖预检
   status                     查看运行状态（summary/engine/cert/conflict/traffic/reality）
@@ -775,7 +775,7 @@ ps_service_rollback_wizard_artifacts() {
 }
 
 ps_service_wizard() {
-  ps_print_header "一键搭建"
+  ps_print_header "一步式创建服务"
   ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
   ps_service_runtime_result 0 ""
 
@@ -790,7 +790,14 @@ ps_service_wizard() {
   local before_ids after_ids new_stack_id
   before_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
 
-  ps_stack_create || return 1
+  if ! ps_stack_create; then
+    if [[ "${PS_STACK_CREATE_ABORTED:-0}" == "1" ]]; then
+      ps_service_runtime_result 0 "${PS_STACK_CREATE_ABORT_REASON:-用户已取消创建}"
+      return 2
+    fi
+    ps_service_runtime_result 0 "${PS_STACK_CREATE_ABORT_REASON:-协议栈创建失败}"
+    return 1
+  fi
 
   after_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
   new_stack_id="$(jq -r --arg before "${before_ids}" '
@@ -826,11 +833,21 @@ ps_service_wizard() {
 }
 
 ps_action_create_service() {
-  if ! ps_service_wizard; then
-    printf "\n创建失败\n"
-    printf "原因：%s\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-未知原因}"
+  local wizard_rc=0
+  ps_service_wizard || wizard_rc=$?
+  if [[ "${wizard_rc}" -eq 2 ]]; then
+    printf "\n已取消创建\n"
+    printf "原因：%s\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-用户已取消}"
     ps_show_next_steps \
-      "修复后重新执行“一键搭建”" \
+      "可重新执行“一步式创建服务”并调整参数" \
+      "前往“运行状态与诊断”确认当前服务不受影响"
+    return 0
+  fi
+  if [[ "${wizard_rc}" -ne 0 ]]; then
+    printf "\n创建失败\n"
+    printf "原因：%s\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-协议栈创建失败}"
+    ps_show_next_steps \
+      "修复后重新执行“一步式创建服务”" \
       "前往“运行状态与诊断”查看最近渲染失败信息"
     return 1
   fi
@@ -1079,7 +1096,7 @@ ps_menu_service_management() {
   while true; do
     ps_ui_menu_select_with_hint "创建与管理服务" "创建对外可用的代理服务（如 VLESS/REALITY、Shadowsocks 2022）。" "返回" "请选择" \
       "查看服务列表" \
-      "一键搭建（推荐）" \
+      "一步式创建服务（推荐）" \
       "编辑服务参数" \
       "删除服务" \
       "启用/禁用服务" \
@@ -1454,7 +1471,7 @@ ps_handle_subcommand() {
       ;;
     *)
       ps_ui_error "不支持的子命令： ${subcommand}"
-      printf '%s\n' "支持的子命令：update、service-wizard（一键搭建）、export、doctor、status、uninstall、cleanup、reset、logs、info、config repo、repair-launcher"
+      printf '%s\n' "支持的子命令：update、service-wizard（一步式创建服务）、export、doctor、status、uninstall、cleanup、reset、logs、info、config repo、repair-launcher"
       return 2
       ;;
   esac
