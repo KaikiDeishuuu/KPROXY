@@ -10,10 +10,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # shellcheck source=lib/logger.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 
+PS_ROUTE_LAST_ENTRY_SUMMARY=""
+PS_ROUTE_LAST_OUTBOUND_SUMMARY=""
+
 ps_route_pick_name() {
   mapfile -t rows < <(jq -r '.routes | sort_by(.priority)[] | "\(.name)|\(.priority)|\(.outbound)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "未找到路由规则。"
+    printf "当前没有路由规则。\n" >&2
     return 1
   fi
 
@@ -28,7 +31,7 @@ ps_route_pick_name() {
   local choice
   choice="$(ps_prompt_required "请选择规则编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "规则选择无效"
+    printf "规则选择无效。\n" >&2
     return 1
   fi
 
@@ -37,28 +40,39 @@ ps_route_pick_name() {
 }
 
 ps_route_pick_outbound() {
-  mapfile -t rows < <(jq -r '.outbounds[] | select(.enabled != false) | "\(.tag)|\(.type)"' "${PS_MANIFEST}")
+  mapfile -t rows < <(jq -r '
+    .outbounds[]?
+    | select(.enabled != false)
+    | [
+        (.tag // "-"),
+        (.type // "-"),
+        ((.server // "-") + ":" + ((.port // 0)|tostring))
+      ]
+    | @tsv
+  ' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "没有可用上游出口。"
+    printf "当前没有可用上游出口，请先创建上游出口。\n" >&2
     return 1
   fi
 
-  local i=1 row
+  local i=1 row tag type remote
   printf "\n" >&2
   for row in "${rows[@]}"; do
-    IFS='|' read -r tag type <<<"${row}"
-    printf "%d) %s (%s)\n" "${i}" "${tag}" "${type}" >&2
+    IFS=$'\t' read -r tag type remote <<<"${row}"
+    printf "%d) %s | 类型=%s | 目标=%s\n" "${i}" "${tag}" "${type}" "${remote}" >&2
     i=$((i + 1))
   done
 
   local choice
-  choice="$(ps_prompt_required "请选择上游出口编号")"
+  choice="$(ps_prompt_required "请选择上游出口")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "上游出口选择无效"
+    printf "上游出口选择无效。\n" >&2
     return 1
   fi
 
-  IFS='|' read -r tag _ <<<"${rows[choice-1]}"
+  IFS=$'\t' read -r tag type remote <<<"${rows[choice-1]}"
+  PS_ROUTE_LAST_OUTBOUND_SUMMARY="${tag}（${type}，${remote}）"
+  printf "已选择上游出口：%s\n" "${PS_ROUTE_LAST_OUTBOUND_SUMMARY}" >&2
   printf "%s" "${tag}"
 }
 
@@ -84,41 +98,71 @@ ps_route_pick_entry_sources_csv() {
   mapfile -t rows < <(ps_route_list_entry_candidates)
 
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "当前没有可选入口，请先创建服务或本机代理入口。"
+    printf "当前没有可选入口，请先创建服务或本机代理入口。\n" >&2
     return 1
   fi
 
-  printf "\n可选入口（入口 -> 规则 -> 出口）：\n" >&2
+  printf "\n请选择入口（入口 -> 规则 -> 出口）\n" >&2
   local i=1 row value class display tag listen
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r value class display tag listen <<<"${row}"
-    printf "%d) %s | 名称=%s | 运行标签=%s | 监听=%s\n" "${i}" "${class}" "${display}" "${tag}" "${listen}" >&2
+    printf "%d) %s（%s，%s）\n" "${i}" "${display}" "${class}" "${listen}" >&2
     i=$((i + 1))
   done
 
-  printf "1) 从列表单选（推荐）\n" >&2
-  printf "2) 从列表多选\n" >&2
-  printf "3) 手动输入标签（高级）\n" >&2
+  local any_idx=$(( ${#rows[@]} + 1 ))
+  local adv_idx=$(( ${#rows[@]} + 2 ))
   if [[ "${allow_any}" == "true" ]]; then
-    printf "4) 不限制入口（匹配任意入口）\n" >&2
+    printf "%d) 匹配任意入口（常用兜底）\n" "${any_idx}" >&2
+  fi
+  printf "%d) 高级选择...\n" "${adv_idx}" >&2
+
+  local choice
+  choice="$(ps_prompt_required "请选择入口")"
+  if ! [[ "${choice}" =~ ^[0-9]+$ ]]; then
+    printf "输入无效，请输入编号。\n" >&2
+    return 1
   fi
 
-  local mode
-  mode="$(ps_prompt_required "请选择入口来源模式")"
+  if (( choice >= 1 && choice <= ${#rows[@]} )); then
+    IFS=$'\t' read -r value class display tag listen <<<"${rows[choice-1]}"
+    PS_ROUTE_LAST_ENTRY_SUMMARY="${display}（${class}，${listen}）"
+    printf "已选择入口：%s\n" "${PS_ROUTE_LAST_ENTRY_SUMMARY}" >&2
+    printf "%s" "${value}"
+    return 0
+  fi
 
-  case "${mode}" in
-    1)
-      local choice
-      choice="$(ps_prompt_required "请选择入口编号")"
-      if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-        ps_log_error "入口选择无效"
-        return 1
-      fi
-      IFS=$'\t' read -r value class display tag listen <<<"${rows[choice-1]}"
-      printf "已选择入口：%s（运行标签=%s，监听=%s）\n" "${display}" "${value}" "${listen}" >&2
-      printf "%s" "${value}"
-      ;;
-    2)
+  if [[ "${allow_any}" == "true" ]] && (( choice == any_idx )); then
+    PS_ROUTE_LAST_ENTRY_SUMMARY="任意入口"
+    printf "%s" ""
+    return 0
+  fi
+
+  if (( choice == adv_idx )); then
+    printf "\n高级选择\n" >&2
+    printf "1) 从列表单选\n" >&2
+    printf "2) 从列表多选（逐项勾选）\n" >&2
+    printf "3) 手动输入标签（高级）\n" >&2
+    if [[ "${allow_any}" == "true" ]]; then
+      printf "4) 不限制入口（匹配任意入口）\n" >&2
+    fi
+    local mode
+    mode="$(ps_prompt_required "请选择高级入口模式")"
+    case "${mode}" in
+      1)
+        local adv_choice
+        adv_choice="$(ps_prompt_required "请选择入口编号")"
+        if ! [[ "${adv_choice}" =~ ^[0-9]+$ ]] || ((adv_choice < 1 || adv_choice > ${#rows[@]})); then
+          printf "入口选择无效。\n" >&2
+          return 1
+        fi
+        IFS=$'\t' read -r value class display tag listen <<<"${rows[adv_choice-1]}"
+        PS_ROUTE_LAST_ENTRY_SUMMARY="${display}（${class}，${listen}）"
+        printf "已选择入口：%s\n" "${PS_ROUTE_LAST_ENTRY_SUMMARY}" >&2
+        printf "%s" "${value}"
+        return 0
+        ;;
+      2)
       local selected_csv="" action choice_idx mark
       while true; do
         printf "\n多选模式：输入编号可切换勾选，d=完成，c=清空，q=取消\n" >&2
@@ -137,7 +181,7 @@ ps_route_pick_entry_sources_csv() {
         case "${action}" in
           d|D)
             if [[ -z "${selected_csv}" ]]; then
-              ps_log_warn "尚未选择任何入口。"
+              printf "尚未选择任何入口。\n" >&2
               continue
             fi
             break
@@ -150,13 +194,17 @@ ps_route_pick_entry_sources_csv() {
             return 1
             ;;
           *)
+            if [[ "${action}" =~ ^[0-9]+[[:alpha:]]+$ ]] || [[ "${action}" =~ ^[[:alpha:]]+[0-9]+$ ]]; then
+              printf "输入格式无效。请先输入编号（如 2），再单独输入 d 完成。\n" >&2
+              continue
+            fi
             if ! [[ "${action}" =~ ^[0-9]+$ ]]; then
-              ps_log_error "输入无效：${action}"
+              printf "输入无效：%s。请输入编号或 d/c/q。\n" "${action}" >&2
               continue
             fi
             choice_idx="${action}"
             if ((choice_idx < 1 || choice_idx > ${#rows[@]})); then
-              ps_log_error "入口编号无效：${choice_idx}"
+              printf "入口编号无效：%s。\n" "${choice_idx}" >&2
               continue
             fi
             IFS=$'\t' read -r value _ <<<"${rows[choice_idx-1]}"
@@ -172,26 +220,36 @@ ps_route_pick_entry_sources_csv() {
             ;;
         esac
       done
+      PS_ROUTE_LAST_ENTRY_SUMMARY="多入口（$(printf '%s' "${selected_csv}" | awk -F',' '{print NF}') 个）"
       printf "已选择入口标签：%s\n" "${selected_csv}" >&2
       printf "%s" "${selected_csv}"
+      return 0
       ;;
     3)
       local manual
       manual="$(ps_prompt_required "请输入入口标签（逗号分隔）")"
+      PS_ROUTE_LAST_ENTRY_SUMMARY="手动标签：${manual}"
       printf "%s" "${manual}"
+      return 0
       ;;
     4)
       if [[ "${allow_any}" != "true" ]]; then
-        ps_log_error "选择无效"
+        printf "选择无效。\n" >&2
         return 1
       fi
+      PS_ROUTE_LAST_ENTRY_SUMMARY="任意入口"
       printf ""
+      return 0
       ;;
     *)
-      ps_log_error "选择无效"
+      printf "选择无效。\n" >&2
       return 1
       ;;
-  esac
+    esac
+  fi
+
+  printf "入口选择无效。\n" >&2
+  return 1
 }
 
 ps_route_name_exists() {
@@ -250,10 +308,11 @@ ps_route_build_rule_json() {
 
 ps_route_create_rule() {
   ps_print_header "创建路由规则"
-  printf "提示：通常只需要设置“入口匹配 + 上游出口”，其余条件可留空。\n"
-  printf "提示：入口匹配支持填写本机入口标签，也支持填写服务名称/stack_id（会自动映射到运行入站标签）。\n"
+  printf "提示：常用流程是 入口 -> 出口；域名/IP/网络条件可按需填写。\n"
 
   local name priority inbound_tags domain_suffix domain_keyword ip_cidr network outbound fallback
+  PS_ROUTE_LAST_ENTRY_SUMMARY=""
+  PS_ROUTE_LAST_OUTBOUND_SUMMARY=""
   name="$(ps_prompt_required "规则名称")"
   if ps_route_name_exists "${name}"; then
     ps_log_error "规则名称已存在：${name}"
@@ -288,8 +347,9 @@ ps_route_create_rule() {
 
   printf "\n保存前确认\n"
   printf "规则：%s | priority=%s\n" "${name}" "${priority}"
-  printf "入口：%s\n" "${inbound_tags:--任意入口--}"
-  printf "出口：%s\n" "${outbound}"
+  printf "入口：%s\n" "${PS_ROUTE_LAST_ENTRY_SUMMARY:-${inbound_tags:--任意入口--}}"
+  printf "出口：%s\n" "${PS_ROUTE_LAST_OUTBOUND_SUMMARY:-${outbound}}"
+  printf "内部标签：inbound=%s | outbound=%s\n" "${inbound_tags:--any--}" "${outbound}"
   printf "域名后缀：%s | 域名关键词：%s | IP/CIDR：%s | 网络：%s\n" \
     "${domain_suffix:--}" "${domain_keyword:--}" "${ip_cidr:--}" "${network:--}"
   if ! ps_confirm "确认保存该路由规则？" "Y"; then
@@ -316,6 +376,8 @@ ps_route_edit_rule() {
 
   local priority enabled inbound_tags domain_suffix domain_keyword ip_cidr network outbound_choice outbound
   local inbound_tags_apply=0
+  PS_ROUTE_LAST_ENTRY_SUMMARY=""
+  PS_ROUTE_LAST_OUTBOUND_SUMMARY=""
   priority="$(ps_prompt "新优先级（留空保持）" "")"
   enabled="$(ps_prompt "启用状态 true/false（留空保持）" "")"
   printf "入口匹配修改方式：\n"
@@ -352,10 +414,16 @@ ps_route_edit_rule() {
   ip_cidr="$(ps_prompt "IP/CIDR 匹配（逗号分隔，留空保持）" "")"
   network="$(ps_prompt "网络匹配（逗号分隔，留空保持）" "")"
 
-  outbound_choice="$(ps_prompt "是否变更上游出口（true/false）" "false")"
+  printf "上游出口修改方式：\n"
+  printf "1) 保持不变（默认）\n"
+  printf "2) 从列表重新选择\n"
+  outbound_choice="$(ps_prompt "请选择" "1")"
   outbound=""
-  if [[ "${outbound_choice}" == "true" ]]; then
+  if [[ "${outbound_choice}" == "2" ]]; then
     outbound="$(ps_route_pick_outbound)" || return 1
+  elif [[ "${outbound_choice}" != "1" && -n "${outbound_choice}" ]]; then
+    ps_log_error "选择无效"
+    return 1
   fi
 
   if [[ -n "${priority}" ]] && ! [[ "${priority}" =~ ^[0-9]+$ ]]; then
