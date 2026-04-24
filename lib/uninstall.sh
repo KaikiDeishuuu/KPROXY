@@ -396,6 +396,9 @@ ps_lifecycle_uninstall_purge() {
     return 0
   fi
 
+  ps_logger_use_terminal_only
+  ps_log_info "已切换到仅终端输出模式（Purge 过程中不再写入磁盘日志）"
+
   ps_lifecycle_remove_services
   ps_lifecycle_remove_launcher
   ps_lifecycle_remove_cron_entries

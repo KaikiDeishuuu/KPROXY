@@ -44,6 +44,7 @@ PS_XRAY_BIN="${PS_BIN_DIR}/xray-linux-${PS_XRAY_ARCH_SUFFIX}"
 PS_SINGBOX_BIN="${PS_BIN_DIR}/sing-box"
 PS_INSTALL_LOG="${PS_LOG_DIR}/install.log"
 PS_DEBUG="${PS_DEBUG:-0}"
+PS_LOG_TERMINAL_ONLY="${PS_LOG_TERMINAL_ONLY:-0}"
 
 ps_now_iso() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"

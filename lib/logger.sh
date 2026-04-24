@@ -24,6 +24,10 @@ ps_logger_init() {
   touch "${PS_INSTALL_LOG}"
 }
 
+ps_logger_use_terminal_only() {
+  PS_LOG_TERMINAL_ONLY="1"
+}
+
 ps_current_log_level() {
   local level="info"
   if [[ -f "${PS_MANIFEST}" ]]; then
@@ -47,6 +51,9 @@ ps_log() {
 
   local line="[${now}] [${level^^}] ${message}"
   printf "%s\n" "${line}"
+  if [[ "${PS_LOG_TERMINAL_ONLY:-0}" == "1" ]]; then
+    return 0
+  fi
   mkdir -p "$(dirname "${PS_INSTALL_LOG}")" 2>/dev/null || true
   touch "${PS_INSTALL_LOG}" 2>/dev/null || true
   printf "%s\n" "${line}" >>"${PS_INSTALL_LOG}" 2>/dev/null || true
