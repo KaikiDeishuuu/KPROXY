@@ -343,9 +343,12 @@ ps_bootstrap_sync_repo() {
     return 1
   fi
 
-  rm -rf "${PS_BOOTSTRAP_INSTALL_DIR}/lib" "${PS_BOOTSTRAP_INSTALL_DIR}/templates"
+  rm -rf "${PS_BOOTSTRAP_INSTALL_DIR}/lib" "${PS_BOOTSTRAP_INSTALL_DIR}/templates" "${PS_BOOTSTRAP_INSTALL_DIR}/scripts"
   cp -a "${source_dir}/lib" "${PS_BOOTSTRAP_INSTALL_DIR}/lib"
   cp -a "${source_dir}/templates" "${PS_BOOTSTRAP_INSTALL_DIR}/templates"
+  if [[ -d "${source_dir}/scripts" ]]; then
+    cp -a "${source_dir}/scripts" "${PS_BOOTSTRAP_INSTALL_DIR}/scripts"
+  fi
   ps_bootstrap_copy_file_atomic "${source_dir}/install.sh" "${PS_BOOTSTRAP_INSTALL_DIR}/install.sh" || {
     ps_bootstrap_error "同步 install.sh 失败。"
     return 1
@@ -359,6 +362,9 @@ ps_bootstrap_sync_repo() {
   fi
 
   chmod +x "${PS_BOOTSTRAP_INSTALL_DIR}/install.sh" "${PS_BOOTSTRAP_INSTALL_DIR}/forward.sh"
+  if [[ -d "${PS_BOOTSTRAP_INSTALL_DIR}/scripts" ]]; then
+    find "${PS_BOOTSTRAP_INSTALL_DIR}/scripts" -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
+  fi
 }
 
 ps_bootstrap_from_github() {
