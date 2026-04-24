@@ -800,17 +800,19 @@ ps_status_traffic_section() {
   orphan_local_inbound="$(jq -r '
     . as $root
     | [.inbounds[]?
-       | select(.public != true)
-       | select(([$root.routes[]? | (.inbound_tag // [])[]] | index(.tag)) == null and ([$root.forwardings[]? | .inbound_tag] | index(.tag)) == null)
-       | .tag]
+       | . as $ib
+       | select($ib.public != true)
+       | select(([$root.routes[]? | (.inbound_tag // [])[]] | index($ib.tag)) == null and ([$root.forwardings[]? | .inbound_tag] | index($ib.tag)) == null)
+       | $ib.tag]
     | if length==0 then "无" else join("，") end
   ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
   orphan_outbound="$(jq -r '
     . as $root
     | [.outbounds[]?
-       | select((.tag != "direct") and (.tag != "block") and (.tag != "dns-out"))
-       | select(([$root.routes[]? | .outbound] | index(.tag)) == null and ([$root.forwardings[]? | .outbound_tag] | index(.tag)) == null)
-       | .tag]
+       | . as $ob
+       | select(($ob.tag != "direct") and ($ob.tag != "block") and ($ob.tag != "dns-out"))
+       | select(([$root.routes[]? | .outbound] | index($ob.tag)) == null and ([$root.forwardings[]? | .outbound_tag] | index($ob.tag)) == null)
+       | $ob.tag]
     | if length==0 then "无" else join("，") end
   ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
 

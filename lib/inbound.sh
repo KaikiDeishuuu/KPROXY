@@ -242,11 +242,52 @@ ps_inbound_delete() {
     case "${action}" in
       1) ps_log_info "已取消"; return 0 ;;
       2)
-        ps_manifest_update --arg tag "${tag}" --arg ts "$(ps_now_iso)" '
-          .routes |= map(if ((.inbound_tag // []) | index($tag)) != null then .inbound_tag = ((.inbound_tag // []) - [$tag]) | .updated_at = $ts else . end)
-          | .forwardings |= map(select(.inbound_tag != $tag))
-          | .meta.updated_at = $ts
-        '
+        local forward_ids_json route_names_json outbound_tags_json
+        forward_ids_json="$(jq -c --arg tag "${tag}" '[.forwardings[]? | select(.inbound_tag == $tag) | .forward_id]' "${PS_MANIFEST}")"
+        route_names_json="$(jq -c --arg tag "${tag}" '[.forwardings[]? | select(.inbound_tag == $tag) | .route_name | select(. != null and . != "")] | unique' "${PS_MANIFEST}")"
+        outbound_tags_json="$(jq -c --arg tag "${tag}" '[.forwardings[]? | select(.inbound_tag == $tag) | .outbound_tag | select(. != null and . != "")] | unique' "${PS_MANIFEST}")"
+
+        ps_manifest_update \
+          --arg tag "${tag}" \
+          --argjson fids "${forward_ids_json}" \
+          --argjson route_names "${route_names_json}" \
+          --arg ts "$(ps_now_iso)" '
+            .forwardings |= map(select(.inbound_tag != $tag))
+            | .routes |= map(select((.name as $rn | ($route_names | index($rn))) == null))
+            | .routes |= map(select((.managed_by // "") as $m | ([$fids[] | ("forward:" + .)] | index($m)) == null))
+            | .routes |= map(if ((.inbound_tag // []) | index($tag)) != null then .inbound_tag = ((.inbound_tag // []) - [$tag]) | .updated_at = $ts else . end)
+            | .inbounds |= map(select((.managed_by // "") as $m | ([$fids[] | ("forward:" + .)] | index($m)) == null))
+            | .outbounds |= map(select((.managed_by // "") as $m | ([$fids[] | ("forward:" + .)] | index($m)) == null))
+            | .meta.updated_at = $ts
+          '
+
+        local orphan_nonmanaged_outbounds_csv
+        orphan_nonmanaged_outbounds_csv="$(jq -r \
+          --argjson tags "${outbound_tags_json}" \
+          '
+            . as $root
+            | [
+              $root.outbounds[]?
+              | . as $ob
+              | select(($tags | index($ob.tag)) != null)
+              | select((.managed_by // "") == "")
+              | select(.tag != "direct" and .tag != "block" and .tag != "dns-out")
+              | .tag as $t
+              | select(([$root.routes[]? | .outbound] | index($t)) == null and ([$root.forwardings[]? | .outbound_tag] | index($t)) == null)
+              | .tag
+            ] | unique | join(",")
+          ' "${PS_MANIFEST}")"
+
+        if [[ -n "${orphan_nonmanaged_outbounds_csv}" ]]; then
+          ps_log_warn "检测到可能孤儿的非托管上游出口：${orphan_nonmanaged_outbounds_csv}"
+          if ps_confirm "是否一并删除这些孤儿上游出口？" "N"; then
+            ps_manifest_update \
+              --argjson drop_tags "$(ps_csv_to_json_array "${orphan_nonmanaged_outbounds_csv}")" \
+              --arg ts "$(ps_now_iso)" \
+              '.outbounds |= map(. as $ob | select(($drop_tags | index($ob.tag)) == null)) | .meta.updated_at = $ts'
+            ps_log_info "已删除孤儿上游出口：${orphan_nonmanaged_outbounds_csv}"
+          fi
+        fi
         ;;
       *) ps_log_error "选择无效"; return 1 ;;
     esac

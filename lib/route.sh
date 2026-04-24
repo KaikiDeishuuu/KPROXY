@@ -352,6 +352,60 @@ ps_route_domain_match() {
   return 0
 }
 
+ps_route_is_ipv4() {
+  local ip="${1:-}"
+  [[ "${ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  local o1 o2 o3 o4
+  IFS='.' read -r o1 o2 o3 o4 <<<"${ip}"
+  for o in "${o1}" "${o2}" "${o3}" "${o4}"; do
+    [[ "${o}" =~ ^[0-9]+$ ]] || return 1
+    ((o >= 0 && o <= 255)) || return 1
+  done
+  return 0
+}
+
+ps_route_ipv4_to_int() {
+  local ip="${1:-}"
+  ps_route_is_ipv4 "${ip}" || return 1
+  local o1 o2 o3 o4
+  IFS='.' read -r o1 o2 o3 o4 <<<"${ip}"
+  printf '%u\n' "$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))"
+}
+
+ps_route_ipv4_in_cidr() {
+  local ip="${1:-}"
+  local cidr="${2:-}"
+  local base mask_bits
+
+  if [[ "${cidr}" == */* ]]; then
+    base="${cidr%/*}"
+    mask_bits="${cidr#*/}"
+  else
+    base="${cidr}"
+    mask_bits="32"
+  fi
+
+  ps_route_is_ipv4 "${ip}" || return 1
+  ps_route_is_ipv4 "${base}" || return 1
+  [[ "${mask_bits}" =~ ^[0-9]+$ ]] || return 1
+  ((mask_bits >= 0 && mask_bits <= 32)) || return 1
+
+  local ip_int base_int host_bits network_mask
+  ip_int="$(ps_route_ipv4_to_int "${ip}")" || return 1
+  base_int="$(ps_route_ipv4_to_int "${base}")" || return 1
+
+  if ((mask_bits == 0)); then
+    return 0
+  fi
+  host_bits=$((32 - mask_bits))
+  network_mask=$(( (0xFFFFFFFF << host_bits) & 0xFFFFFFFF ))
+
+  if ((((ip_int & network_mask)) == ((base_int & network_mask)))); then
+    return 0
+  fi
+  return 1
+}
+
 ps_route_ip_match() {
   local ip="${1}"
   local cidr_json="${2}"
@@ -362,8 +416,8 @@ ps_route_ip_match() {
 
   local cidr
   while IFS= read -r cidr; do
-    local prefix="${cidr%/*}"
-    if [[ -n "${prefix}" && "${ip}" == ${prefix}* ]]; then
+    [[ -n "${cidr}" ]] || continue
+    if ps_route_ipv4_in_cidr "${ip}" "${cidr}"; then
       return 0
     fi
   done < <(jq -r '.[]' <<<"${cidr_json}")
