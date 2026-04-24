@@ -378,12 +378,12 @@ ps_port_is_listening() {
   ps_validate_port "${port}" || return 1
 
   if ps_command_exists ss; then
-    ss -H -lntu 2>/dev/null | awk '{print $5}' | grep -Eq "(^|[:\]])${port}$"
+    ss -H -lntu 2>/dev/null | awk -v p="${port}" '$5 ~ ("(^|[:\\]])" p "$") { found=1; exit } END { exit(found ? 0 : 1) }'
     return $?
   fi
 
   if ps_command_exists netstat; then
-    netstat -lntu 2>/dev/null | awk '{print $4}' | grep -Eq "(^|[:\]])${port}$"
+    netstat -lntu 2>/dev/null | awk -v p="${port}" '$4 ~ ("(^|[:\\]])" p "$") { found=1; exit } END { exit(found ? 0 : 1) }'
     return $?
   fi
 
