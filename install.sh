@@ -27,7 +27,7 @@ PS_RUNTIME_ARGS=()
 
 ps_cli_print_help() {
   cat <<'EOF'
-Proxy 协议栈 安装器/启动器
+kprxy 安装器/控制台
 
 参数：
   --mode <main|forward>      运行主菜单或仅转发菜单
@@ -41,9 +41,13 @@ Proxy 协议栈 安装器/启动器
 
 子命令：
   update                     同步最新脚本/模板到当前安装目录
-  export                     一键导出：客户端配置 + 初始化规则包
+  service-wizard             一步式创建服务（自动完成模板+入口绑定）
+  export                     一键导出：客户端配置 + 初始化规则包（推荐给普通用户）
   doctor                     执行依赖预检
   status                     查看运行状态（summary/engine/cert/conflict）
+  uninstall                  卸载 kprxy（默认保留数据，可选 --purge / --keep-data / --yes）
+  cleanup                    清理临时与生成产物（可选 --yes）
+  reset                      重置项目状态与配置（保留框架安装，可选 --yes）
   repair-launcher            显式修复/更新 kprxy 启动命令
   logs                       查看安装日志
   info                       显示启动器/安装元数据
@@ -315,6 +319,7 @@ ps_bootstrap_sync_repo() {
     "forward.sh"
     "lib/common.sh"
     "lib/status.sh"
+    "lib/uninstall.sh"
     "lib/launcher.sh"
     "templates/xray/base.json.tpl"
     "templates/singbox/base.json.tpl"
@@ -480,6 +485,8 @@ source "${SCRIPT_DIR}/lib/diagnostic.sh"
 source "${SCRIPT_DIR}/lib/backup.sh"
 # shellcheck source=lib/status.sh
 source "${SCRIPT_DIR}/lib/status.sh"
+# shellcheck source=lib/uninstall.sh
+source "${SCRIPT_DIR}/lib/uninstall.sh"
 
 ps_run_action() {
   local action="${1}"
@@ -489,6 +496,124 @@ ps_run_action() {
     ps_ui_error "操作失败： ${action}"
   fi
   ps_pause
+}
+
+ps_show_next_steps() {
+  local tips=("$@")
+  [[ "${#tips[@]}" -gt 0 ]] || return 0
+  printf "\n下一步建议：\n"
+  local tip
+  for tip in "${tips[@]}"; do
+    printf "- %s\n" "${tip}"
+  done
+}
+
+ps_service_create_bind_public_inbound() {
+  local stack_id="${1:-}"
+  local stack_protocol="${2:-}"
+  local stack_port="${3:-0}"
+  [[ -n "${stack_id}" ]] || return 1
+
+  local exists
+  exists="$(jq -r --arg sid "${stack_id}" '.inbounds | any(.stack_id == $sid and .public == true)' "${PS_MANIFEST}")"
+  if [[ "${exists}" == "true" ]]; then
+    ps_log_info "该服务已存在绑定的公网监听入口，跳过自动创建。"
+    return 0
+  fi
+
+  local tag_base tag suffix
+  tag_base="svc-${stack_id}"
+  tag="${tag_base}"
+  suffix=1
+  while ps_manifest_array_has '.inbounds' 'tag' "${tag}"; do
+    tag="${tag_base}-${suffix}"
+    suffix=$((suffix + 1))
+  done
+
+  local inbound_json
+  inbound_json="$(jq -n \
+    --arg tag "${tag}" \
+    --arg type "${stack_protocol}" \
+    --arg listen "0.0.0.0" \
+    --argjson port "${stack_port}" \
+    --arg stack_id "${stack_id}" \
+    --arg created_at "$(ps_now_iso)" \
+    '{tag:$tag,type:$type,listen:$listen,port:$port,auth:{},udp:true,stack_id:$stack_id,public:true,enabled:true,managed_by:"service-wizard",created_at:$created_at,updated_at:$created_at}')"
+
+  ps_manifest_update --argjson inbound "${inbound_json}" --arg ts "$(ps_now_iso)" '.inbounds += [$inbound] | .meta.updated_at = $ts'
+  ps_log_success "已自动创建并绑定公网监听入口：${tag}"
+}
+
+ps_service_wizard() {
+  ps_print_header "一步式创建服务"
+  ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
+
+  local before_ids after_ids new_stack_id
+  before_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
+
+  ps_stack_create || return 1
+
+  after_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
+  new_stack_id="$(jq -r --arg before "${before_ids}" '
+    .stacks
+    | map(.stack_id)
+    | map(select(($before | split(" ")) | index(.) | not))
+    | last // empty
+  ' "${PS_MANIFEST}")"
+
+  if [[ -z "${new_stack_id}" ]]; then
+    new_stack_id="$(jq -r '.stacks | sort_by(.created_at // "") | last.stack_id // empty' "${PS_MANIFEST}")"
+  fi
+  [[ -n "${new_stack_id}" ]] || return 1
+
+  local stack_protocol stack_port
+  stack_protocol="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .protocol // "vless"' "${PS_MANIFEST}")"
+  stack_port="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .port // 0' "${PS_MANIFEST}")"
+
+  ps_service_create_bind_public_inbound "${new_stack_id}" "${stack_protocol}" "${stack_port}" || true
+}
+
+ps_action_create_service() {
+  ps_service_wizard || return 1
+  local stack_info
+  stack_info="$(jq -r '.stacks | if length==0 then "" else (sort_by(.created_at // "") | last | "名称：\(.name // "-") | 协议：\(.protocol // "-") | 安全：\(.security // "-") | 地址：\(.server // "-") | 端口：\(.port // "-")") end' "${PS_MANIFEST}")"
+  [[ -n "${stack_info}" ]] && printf "\n创建完成\n%s\n" "${stack_info}"
+  printf "状态：已生成并启用（含自动入口绑定）\n"
+  ps_show_next_steps \
+    "前往“订阅与导出”生成客户端配置" \
+    "前往“运行状态与诊断”检查监听与配置状态"
+}
+
+ps_action_create_protocol_template() {
+  ps_stack_create || return 1
+  printf "\n高级提示\n"
+  printf "协议模板已创建。该模板定义协议/加密/传输参数，不直接代表本地代理入口。\n"
+  ps_show_next_steps \
+    "前往“高级设置 -> 监听入口管理（高级）”绑定监听端口" \
+    "或返回“创建与管理服务”继续走推荐流程"
+}
+
+ps_action_create_local_proxy_entry() {
+  ps_inbound_create_local || return 1
+  local inbound_info
+  inbound_info="$(jq -r '.inbounds | map(select(.public != true)) | if length==0 then "" else (sort_by(.created_at // "") | last | "标签：\(.tag) | 类型：\(.type) | 监听：\(.listen):\(.port)") end' "${PS_MANIFEST}")"
+  [[ -n "${inbound_info}" ]] && printf "\n创建完成\n%s\n" "${inbound_info}"
+  ps_show_next_steps \
+    "如需链式代理，请前往“本地代理与转发”创建转发规则" \
+    "如需导出客户端配置，请前往“订阅与导出”"
+}
+
+ps_action_issue_cert() {
+  ps_cert_issue_acme || return 1
+  ps_show_next_steps \
+    "若服务使用 TLS，可前往“创建与管理服务”检查域名绑定" \
+    "前往“运行状态与诊断”确认证书状态与有效期"
+}
+
+ps_action_export_bundle() {
+  ps_sub_export_client_with_rules_bundle || return 1
+  ps_show_next_steps \
+    "将生成结果分发到客户端后，可在“运行状态与诊断”观察服务与端口状态"
 }
 
 ps_check_dependencies() {
@@ -580,19 +705,19 @@ ps_menu_forwarding() {
   done
 }
 
-ps_menu_stack_management() {
+ps_menu_advanced_stack_templates() {
   while true; do
-    ps_ui_menu_select "协议栈管理" "返回" "请选择" \
-      "查看已安装协议栈" \
-      "创建新协议栈" \
-      "编辑协议栈" \
-      "删除协议栈" \
-      "启用/禁用协议栈" \
-      "重新渲染配置"
+    ps_ui_menu_select_with_hint "协议模板管理（高级）" "定义协议、加密和传输参数。该层不直接解释业务场景，面向高级用户。" "返回" "请选择" \
+      "查看协议模板列表" \
+      "创建协议模板" \
+      "编辑协议模板" \
+      "删除协议模板" \
+      "启用/禁用协议模板" \
+      "重新渲染运行配置"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_stack_list ;;
-      2) ps_run_action ps_stack_create ;;
+      2) ps_run_action ps_action_create_protocol_template ;;
       3) ps_run_action ps_stack_edit ;;
       4) ps_run_action ps_stack_delete ;;
       5) ps_run_action ps_stack_toggle ;;
@@ -603,15 +728,15 @@ ps_menu_stack_management() {
   done
 }
 
-ps_menu_inbound_management() {
+ps_menu_advanced_inbound_management() {
   while true; do
-    ps_ui_menu_select "入站管理" "返回" "请选择" \
-      "查看入站" \
-      "创建公网入站" \
-      "创建本地入站" \
-      "编辑入站" \
-      "删除入站" \
-      "绑定入站到协议栈"
+    ps_ui_menu_select_with_hint "监听入口管理（高级）" "定义监听端口与入口类型，可手动绑定到协议模板。" "返回" "请选择" \
+      "查看监听入口" \
+      "创建公网监听入口" \
+      "创建本地监听入口" \
+      "编辑监听入口" \
+      "删除监听入口" \
+      "手动绑定到协议模板"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_inbound_list ;;
@@ -626,16 +751,16 @@ ps_menu_inbound_management() {
   done
 }
 
-ps_menu_outbound_routing() {
+ps_menu_advanced_outbound_routing() {
   while true; do
-    ps_ui_menu_select "出站与路由" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "出站与高级路由（高级）" "面向需要精细控制链路策略的用户。" "返回" "请选择" \
       "查看出站" \
       "创建出站" \
       "编辑出站" \
       "删除出站" \
-      "查看路由规则" \
-      "创建路由规则" \
-      "转发管理（独立模块）" \
+      "查看高级路由规则" \
+      "创建高级路由规则" \
+      "转发管理（高级）" \
       "调整路由优先级" \
       "测试路由匹配"
 
@@ -655,9 +780,86 @@ ps_menu_outbound_routing() {
   done
 }
 
+ps_menu_service_management() {
+  while true; do
+    ps_ui_menu_select_with_hint "创建与管理服务" "创建对外可用的代理服务（如 VLESS/REALITY、Shadowsocks 2022）。" "返回" "请选择" \
+      "查看服务列表" \
+      "一步式创建服务（推荐）" \
+      "编辑服务参数" \
+      "删除服务" \
+      "启用/禁用服务" \
+      "重新渲染服务配置"
+
+    case "${PS_UI_LAST_CHOICE}" in
+      1) ps_run_action ps_stack_list ;;
+      2) ps_run_action ps_action_create_service ;;
+      3) ps_run_action ps_stack_edit ;;
+      4) ps_run_action ps_stack_delete ;;
+      5) ps_run_action ps_stack_toggle ;;
+      6) ps_run_action ps_stack_rerender ;;
+      0) break ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
+    esac
+  done
+}
+
+ps_menu_local_proxy_forward() {
+  while true; do
+    ps_ui_menu_select_with_hint "本地代理与转发" "创建本地 SOCKS5/HTTP/Mixed 入口，或配置链式转发。" "返回" "请选择" \
+      "查看本地代理入口" \
+      "创建本地代理入口（推荐）" \
+      "创建公网监听入口" \
+      "编辑监听入口" \
+      "删除监听入口" \
+      "创建转发规则" \
+      "查看转发规则" \
+      "删除转发规则"
+
+    case "${PS_UI_LAST_CHOICE}" in
+      1) ps_run_action ps_inbound_list ;;
+      2) ps_run_action ps_action_create_local_proxy_entry ;;
+      3) ps_run_action ps_inbound_create_public ;;
+      4) ps_run_action ps_inbound_edit ;;
+      5) ps_run_action ps_inbound_delete ;;
+      6) ps_run_action ps_forward_create ;;
+      7) ps_run_action ps_forward_list ;;
+      8) ps_run_action ps_forward_delete ;;
+      0) break ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
+    esac
+  done
+}
+
+ps_menu_route_rules() {
+  while true; do
+    ps_ui_menu_select_with_hint "路由与规则" "管理出站目标与流量规则，决定流量去向。" "返回" "请选择" \
+      "查看出站" \
+      "创建出站" \
+      "编辑出站" \
+      "删除出站" \
+      "查看路由规则" \
+      "创建路由规则" \
+      "调整路由优先级" \
+      "测试路由匹配"
+
+    case "${PS_UI_LAST_CHOICE}" in
+      1) ps_run_action ps_outbound_list ;;
+      2) ps_run_action ps_outbound_create ;;
+      3) ps_run_action ps_outbound_edit ;;
+      4) ps_run_action ps_outbound_delete ;;
+      5) ps_run_action ps_route_list ;;
+      6) ps_run_action ps_route_create_rule ;;
+      7) ps_run_action ps_route_reorder_priority ;;
+      8) ps_run_action ps_route_test_match ;;
+      0) break ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
+    esac
+  done
+}
+
 ps_menu_cert_domain() {
   while true; do
-    ps_ui_menu_select "证书与域名" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "证书与域名" "管理 TLS 证书、自动续费和服务域名。" "返回" "请选择" \
       "查看证书列表" \
       "申请证书（ACME）" \
       "安装自定义证书" \
@@ -667,7 +869,7 @@ ps_menu_cert_domain() {
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_cert_list ;;
-      2) ps_run_action ps_cert_issue_acme ;;
+      2) ps_run_action ps_action_issue_cert ;;
       3) ps_run_action ps_cert_install_custom ;;
       4) ps_run_action ps_cert_configure_auto_renew ;;
       5) ps_run_action ps_cert_test_renewal ;;
@@ -680,7 +882,7 @@ ps_menu_cert_domain() {
 
 ps_menu_subscribe_export() {
   while true; do
-    ps_ui_menu_select "订阅与导出" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "订阅与导出" "生成客户端可直接使用的配置与初始化规则。" "返回" "请选择" \
       "生成分享链接" \
       "生成 Base64 订阅" \
       "导出 Clash.Meta" \
@@ -697,7 +899,7 @@ ps_menu_subscribe_export() {
       4) ps_run_action ps_sub_export_xray_client_config ;;
       5) ps_run_action ps_sub_export_singbox_client_config ;;
       6) ps_run_action ps_sub_export_initialized_rules_bundle ;;
-      7) ps_run_action ps_sub_export_client_with_rules_bundle ;;
+      7) ps_run_action ps_action_export_bundle ;;
       8) ps_run_action ps_sub_export_local_proxy_templates ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
@@ -707,7 +909,7 @@ ps_menu_subscribe_export() {
 
 ps_menu_logs_diagnostics() {
   while true; do
-    ps_ui_menu_select "日志与诊断" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "运行状态与诊断" "查看状态、日志与诊断信息，定位运行问题。" "返回" "请选择" \
       "查看完整运行状态" \
       "仅查看内核/进程状态" \
       "仅查看证书状态" \
@@ -746,15 +948,15 @@ ps_menu_logs_diagnostics() {
 
 ps_menu_engines_services() {
   while true; do
-    ps_ui_menu_select "引擎与服务" "返回" "请选择" \
-      "安装/升级 xray-core" \
-      "安装/升级 sing-box" \
+    ps_ui_menu_select_with_hint "核心与运行控制" "管理 Xray/sing-box 核心与运行服务。" "返回" "请选择" \
+      "安装/升级 Xray 核心" \
+      "安装/升级 sing-box 核心" \
       "启动服务" \
       "停止服务" \
       "重启服务" \
       "重载配置" \
-      "查看版本" \
-      "卸载引擎" \
+      "查看核心版本" \
+      "移除核心二进制" \
       "安装/更新 systemd 单元"
 
     case "${PS_UI_LAST_CHOICE}" in
@@ -781,12 +983,16 @@ ps_menu_engines_services() {
 
 ps_menu_backup_restore() {
   while true; do
-    ps_ui_menu_select "备份与恢复" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "备份、清理与卸载" "执行备份、重置、清理与卸载等生命周期操作。" "返回" "请选择" \
       "备份 Manifest" \
       "备份配置文件" \
       "备份证书" \
       "恢复备份" \
-      "回滚到上一版本"
+      "回滚到上一版本" \
+      "卸载 kprxy（保留数据）" \
+      "完全清理卸载（Purge）" \
+      "清理临时文件" \
+      "重置项目状态"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_backup_manifest ;;
@@ -794,6 +1000,27 @@ ps_menu_backup_restore() {
       3) ps_run_action ps_backup_certificates ;;
       4) ps_run_action ps_backup_restore ;;
       5) ps_run_action ps_backup_rollback_previous ;;
+      6) ps_run_action ps_lifecycle_uninstall keep-data ;;
+      7) ps_run_action ps_lifecycle_uninstall purge ;;
+      8) ps_run_action ps_lifecycle_cleanup ;;
+      9) ps_run_action ps_lifecycle_reset ;;
+      0) break ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
+    esac
+  done
+}
+
+ps_menu_advanced_settings() {
+  while true; do
+    ps_ui_menu_select_with_hint "高级设置" "面向高级用户的模板、监听入口与高级编排功能。" "返回" "请选择" \
+      "协议模板管理（高级）" \
+      "监听入口管理（高级）" \
+      "出站与高级路由（高级）"
+
+    case "${PS_UI_LAST_CHOICE}" in
+      1) ps_menu_advanced_stack_templates ;;
+      2) ps_menu_advanced_inbound_management ;;
+      3) ps_menu_advanced_outbound_routing ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -814,6 +1041,11 @@ ps_handle_subcommand() {
       PS_BOOTSTRAP_ONLY=1
       ps_bootstrap_from_github
       ;;
+    service-wizard)
+      ps_preflight_checks || return $?
+      ps_init_manifest
+      ps_service_wizard
+      ;;
     export)
       ps_preflight_checks || return $?
       ps_init_manifest
@@ -826,6 +1058,54 @@ ps_handle_subcommand() {
       ps_preflight_checks || return $?
       ps_init_manifest
       ps_status_command "${1:-summary}"
+      ;;
+    uninstall)
+      local uninstall_mode="keep-data"
+      PS_LIFECYCLE_ASSUME_YES=0
+      while [[ "${#}" -gt 0 ]]; do
+        case "${1}" in
+          --purge) uninstall_mode="purge" ;;
+          --keep-data) uninstall_mode="keep-data" ;;
+          --yes|-y) PS_LIFECYCLE_ASSUME_YES=1 ;;
+          *)
+            ps_ui_error "不支持的 uninstall 参数：${1}"
+            printf "用法： kprxy uninstall [--purge|--keep-data] [--yes]\n"
+            return 2
+            ;;
+        esac
+        shift || true
+      done
+      ps_lifecycle_uninstall "${uninstall_mode}"
+      ;;
+    cleanup)
+      PS_LIFECYCLE_ASSUME_YES=0
+      while [[ "${#}" -gt 0 ]]; do
+        case "${1}" in
+          --yes|-y) PS_LIFECYCLE_ASSUME_YES=1 ;;
+          *)
+            ps_ui_error "不支持的 cleanup 参数：${1}"
+            printf "用法： kprxy cleanup [--yes]\n"
+            return 2
+            ;;
+        esac
+        shift || true
+      done
+      ps_lifecycle_cleanup
+      ;;
+    reset)
+      PS_LIFECYCLE_ASSUME_YES=0
+      while [[ "${#}" -gt 0 ]]; do
+        case "${1}" in
+          --yes|-y) PS_LIFECYCLE_ASSUME_YES=1 ;;
+          *)
+            ps_ui_error "不支持的 reset 参数：${1}"
+            printf "用法： kprxy reset [--yes]\n"
+            return 2
+            ;;
+        esac
+        shift || true
+      done
+      ps_lifecycle_reset
       ;;
     repair-launcher)
       ps_repair_launcher
@@ -848,7 +1128,7 @@ ps_handle_subcommand() {
       ;;
     *)
       ps_ui_error "不支持的子命令： ${subcommand}"
-      printf '%s\n' "支持的子命令：update、export、doctor、status、logs、info、config repo、repair-launcher"
+      printf '%s\n' "支持的子命令：update、service-wizard、export、doctor、status、uninstall、cleanup、reset、logs、info、config repo、repair-launcher"
       return 2
       ;;
   esac
@@ -922,25 +1202,27 @@ main() {
   fi
 
   while true; do
-    ps_ui_menu_select "主菜单" "退出" "请选择" \
-      "协议栈管理" \
-      "入站管理" \
-      "出站与路由" \
+    ps_ui_menu_select_with_hint "主菜单" "推荐流程：先创建服务，再创建本地代理入口，最后导出配置并检查状态。" "退出" "请选择" \
+      "创建与管理服务" \
+      "本地代理与转发" \
+      "路由与规则" \
       "证书与域名" \
       "订阅与导出" \
-      "日志与诊断" \
-      "引擎与服务" \
-      "备份与恢复"
+      "运行状态与诊断" \
+      "核心与运行控制" \
+      "备份、清理与卸载" \
+      "高级设置"
 
     case "${PS_UI_LAST_CHOICE}" in
-      1) ps_menu_stack_management ;;
-      2) ps_menu_inbound_management ;;
-      3) ps_menu_outbound_routing ;;
+      1) ps_menu_service_management ;;
+      2) ps_menu_local_proxy_forward ;;
+      3) ps_menu_route_rules ;;
       4) ps_menu_cert_domain ;;
       5) ps_menu_subscribe_export ;;
       6) ps_menu_logs_diagnostics ;;
       7) ps_menu_engines_services ;;
       8) ps_menu_backup_restore ;;
+      9) ps_menu_advanced_settings ;;
       0)
         ps_ui_info "已退出"
         break

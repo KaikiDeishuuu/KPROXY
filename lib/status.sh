@@ -17,6 +17,64 @@ ps_status_section() {
   printf "\n[%s]\n" "${title}"
 }
 
+ps_status_launcher_candidates() {
+  local candidates=("/usr/local/bin/kprxy" "${HOME}/.local/bin/kprxy")
+  if [[ -n "${PS_BOOTSTRAP_LAUNCHER_PATH:-}" ]]; then
+    candidates+=("${PS_BOOTSTRAP_LAUNCHER_PATH}")
+  fi
+  printf '%s\n' "${candidates[@]}" | awk '!seen[$0]++'
+}
+
+ps_status_launcher_installed() {
+  local launcher
+  while read -r launcher; do
+    [[ -n "${launcher}" ]] || continue
+    if [[ -x "${launcher}" ]]; then
+      printf "%s\n" "${launcher}"
+      return 0
+    fi
+  done < <(ps_status_launcher_candidates)
+  return 1
+}
+
+ps_status_installation_section() {
+  ps_status_section "安装状态"
+
+  local launcher runtime_ok home_ok manifest_ok services_count
+  launcher="$(ps_status_launcher_installed || true)"
+  runtime_ok="否"
+  home_ok="否"
+  manifest_ok="否"
+  services_count=0
+
+  [[ -d "${PS_RUNTIME_DIR}" ]] && runtime_ok="是"
+  [[ -d "${PS_HOME_DIR}" ]] && home_ok="是"
+  [[ -f "${PS_MANIFEST}" ]] && manifest_ok="是"
+
+  if ps_systemd_is_available; then
+    ps_systemd_service_exists "${PS_XRAY_SERVICE}" && services_count=$((services_count + 1))
+    ps_systemd_service_exists "${PS_SINGBOX_SERVICE}" && services_count=$((services_count + 1))
+  fi
+
+  if [[ -n "${launcher}" ]]; then
+    printf -- "- 启动器：已安装（%s）\n" "${launcher}"
+  else
+    printf -- "- 启动器：未安装\n"
+  fi
+  printf -- "- 项目目录：%s（路径=%s）\n" "${home_ok}" "${PS_HOME_DIR}"
+  printf -- "- 运行目录：%s（路径=%s）\n" "${runtime_ok}" "${PS_RUNTIME_DIR}"
+  printf -- "- 状态文件：%s（路径=%s）\n" "${manifest_ok}" "${PS_MANIFEST}"
+  printf -- "- kprxy systemd 单元数量：%s\n" "${services_count}"
+
+  if [[ -z "${launcher}" && ( "${home_ok}" == "是" || "${manifest_ok}" == "是" || "${services_count}" -gt 0 ) ]]; then
+    printf -- "- 检测结论：存在残留，疑似“部分卸载”。\n"
+  elif [[ -n "${launcher}" && "${home_ok}" == "否" && "${manifest_ok}" == "否" ]]; then
+    printf -- "- 检测结论：仅剩启动器，安装状态不完整。\n"
+  else
+    printf -- "- 检测结论：安装状态正常。\n"
+  fi
+}
+
 ps_status_cmdline_of_pid() {
   local pid="${1}"
   ps -p "${pid}" -o args= 2>/dev/null || true
@@ -497,6 +555,7 @@ ps_status_conflict_section() {
 
 ps_status_summary() {
   ps_print_header "运行状态"
+  ps_status_installation_section
   ps_status_engine_section
   ps_status_ports_section
   ps_status_config_section

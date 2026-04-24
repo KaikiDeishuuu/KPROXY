@@ -1,34 +1,57 @@
 # kprxy（中文优先）
 
-`kprxy` 是一个面向 Linux 的模块化 Bash 代理维护工具。设计目标：
+`kprxy` 是一个面向 Linux 的模块化代理管理工具。产品目标是：
 
-- 默认隔离运行
-- 显式复用资源
-- 自动检测冲突
-- 与 3x-ui 等现有项目安全共存
+- 普通用户按“创建服务 -> 创建本地代理入口 -> 导出配置 -> 查看状态”完成流程
+- 高级用户仍可使用模板/监听入口/路由等细粒度控制
+- 默认与 3x-ui、其他 Xray/sing-box 项目安全共存
 
-## 核心特性
-
-- 双引擎：Xray、sing-box
-- 协议栈 / 入站 / 出站 / 路由 / 转发 / 证书 / 订阅导出
-- 统一状态检查：`kprxy status`
-- 诊断菜单与导出诊断包
-- 证书状态与续期任务检测
-
-## 安装与启动
+## Quick Start（最短路径）
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
 kprxy
 ```
 
-更新：
+常用命令：
 
 ```bash
 kprxy update
+kprxy service-wizard
+kprxy status
+kprxy uninstall
 ```
 
-## 运行状态命令
+## 核心概念（先讲人话）
+
+- 服务：对外可用的代理服务（例如 VLESS/REALITY、Shadowsocks 2022）
+- 本地代理入口：本机 SOCKS5/HTTP/Mixed 入口
+- 转发：把本地入口流量转发到指定出站目标
+- 路由与规则：控制流量走向
+
+高级概念（在“高级设置”中）：
+
+- 协议模板：定义协议/加密/传输参数
+- 监听入口：定义端口监听方式并可绑定协议模板
+
+## 一步式服务向导（推荐）
+
+```bash
+kprxy service-wizard
+```
+
+该向导会自动完成：
+
+- 创建协议模板（服务主体）
+- 自动创建并绑定公网监听入口（元数据绑定）
+
+这让普通用户无需先理解“模板/入站绑定”即可完成服务创建。
+
+## 安装与启动
+
+见上方 Quick Start。
+
+## 状态命令
 
 ```bash
 kprxy status
@@ -38,71 +61,73 @@ kprxy status cert
 kprxy status conflict
 ```
 
-状态输出包含：
+状态输出包含：安装状态、内核状态、端口监听、配置状态、systemd 状态、证书状态、冲突检测。
 
-- 运行状态：Xray / sing-box 进程、PID、是否由 systemd 托管、服务名、二进制路径、配置路径
-- 端口监听：协议栈端口、本地入站端口、转发监听端口（并显示占用进程）
-- 配置状态：配置文件是否存在、路径、最后修改时间、最近渲染状态、当前校验结果
-- systemd 状态：active/inactive/failed、enabled/disabled
-- 证书状态：域名、fullchain/key 是否存在、issuer/subject/notBefore/notAfter、剩余天数、自动续费状态、续费任务是否存在
-- 冲突检测：3x-ui 检测、其他 Xray/sing-box 实例、端口冲突、服务名冲突、配置路径隔离、证书路径复用提醒
+## 卸载 / 清理 / 重置
 
-## 菜单入口
+默认保守：`uninstall` 保留数据。
 
-主菜单 -> `日志与诊断` 提供：
+```bash
+kprxy uninstall
+kprxy uninstall --keep-data
+kprxy uninstall --purge
+kprxy cleanup
+kprxy reset
+```
 
-1. 查看完整运行状态
-2. 仅查看内核/进程状态
-3. 仅查看证书状态
-4. 仅查看冲突检测
+非交互自动确认：
 
-## 与 3x-ui / 其他面板的兼容策略
+```bash
+kprxy uninstall --keep-data --yes
+kprxy uninstall --purge --yes
+kprxy cleanup --yes
+kprxy reset --yes
+```
 
-`kprxy` 不会默认接管或重写其他面板配置，遵循以下策略：
+行为说明：
 
-1. 二进制隔离：默认使用私有引擎路径（如 `/opt/kprxy/bin/*`）
-2. 配置隔离：默认使用私有配置路径（如 `/opt/kprxy/runtime/*`）
-3. systemd 隔离：使用 `kprxy-xray.service` / `kprxy-singbox.service`
-4. 端口冲突预防：创建监听端口前检查 manifest 与当前监听状态
-5. 证书隔离：默认使用 `/opt/kprxy/certs/<domain>/`
-6. 显式复用：仅在用户明确选择时复用外部证书路径
+- `uninstall` / `--keep-data`：移除启动器、kprxy 服务、kprxy 私有二进制；保留配置/证书/日志/状态/导出
+- `uninstall --purge`：彻底删除 kprxy 自有资源（不可恢复）
+- `cleanup`：仅清理临时/缓存/导出产物
+- `reset`：重置状态与配置为基线，保留框架安装
 
-## 默认隔离路径（root 模式）
+## 菜单架构（中文优先）
+
+主菜单：
+
+1. 创建与管理服务
+2. 本地代理与转发
+3. 路由与规则
+4. 证书与域名
+5. 订阅与导出
+6. 运行状态与诊断
+7. 核心与运行控制
+8. 备份、清理与卸载
+9. 高级设置
+0. 退出
+
+设计意图：
+
+- 普通用户优先看到“服务、本地代理、导出、状态”
+- “协议模板/监听入口”等抽象概念后置到“高级设置”
+
+## 与 3x-ui / 其他面板的共存策略
+
+- 默认隔离：`/opt/kprxy`（root）或 `<项目目录>/.runtime/kprxy`（非 root）
+- systemd 服务名隔离：`kprxy-xray`、`kprxy-singbox`
+- 卸载默认只处理 kprxy 自有资源
+- 不会默认删除 `xray.service`、`sing-box.service` 或 3x-ui 服务
+
+## 默认隔离路径（root）
 
 - 项目目录：`/opt/kprxy`
 - 私有二进制：`/opt/kprxy/bin/`
-- 运行配置：`/opt/kprxy/runtime/xray/config.json`、`/opt/kprxy/runtime/sing-box/config.json`
-- 日志目录：`/opt/kprxy/runtime/log/`
-- 证书目录：`/opt/kprxy/certs/`
-- systemd 服务：`kprxy-xray`、`kprxy-singbox`
-
-非 root 默认写入：`<项目目录>/.runtime/kprxy/`
-
-## 证书管理说明
-
-证书菜单支持：
-
-- ACME 签发并安装到私有目录
-- 自定义证书接入
-  - 模式 1：复制到 kprxy 私有目录（推荐）
-  - 模式 2：显式复用外部路径（不会由 kprxy 改写）
-- 自动续期配置与测试
-
-## 目录结构（简）
-
-```text
-.
-├── install.sh
-├── forward.sh
-├── lib/
-├── templates/
-├── state/manifest.json
-├── output/
-└── backups/
-```
+- 配置：`/opt/kprxy/runtime/xray/config.json`、`/opt/kprxy/runtime/sing-box/config.json`
+- 日志：`/opt/kprxy/runtime/log/`
+- 证书：`/opt/kprxy/certs/`
 
 ## 注意事项
 
-- 依赖 `jq`（缺失时会中止依赖相关功能）
-- `kprxy` 以“共存优先”为原则，不会默认覆盖其他面板资源
-- 若检测到现有 3x-ui 或其他实例，会给出冲突/共存提示
+- `--purge` 不可逆
+- `--yes` 仅建议用于自动化场景
+- 依赖 `jq`（缺失时依赖 manifest 的能力不可用）

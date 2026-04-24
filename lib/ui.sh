@@ -56,6 +56,16 @@ ps_ui_section() {
   printf "%s[%s]%s\n" "${blue}" "${title}" "${reset}"
 }
 
+ps_ui_tip() {
+  local text="${1:-}"
+  [[ -n "${text}" ]] || return 0
+  local dim
+  dim="$(ps_ui_color 2)"
+  local reset
+  reset="$(ps_ui_reset)"
+  printf "%s%s%s\n" "${dim}" "${text}" "${reset}"
+}
+
 ps_ui_info() {
   ps_log_info "$*"
 }
@@ -80,6 +90,28 @@ ps_ui_menu_select() {
   local options=("$@")
 
   ps_ui_header "${title}"
+  local i=1
+  local option
+  for option in "${options[@]}"; do
+    printf " %2d. %s\n" "${i}" "${option}"
+    i=$((i + 1))
+  done
+  printf "  0. %s\n" "${zero_label}"
+  ps_ui_rule
+
+  read -r -p "${prompt}: " PS_UI_LAST_CHOICE
+}
+
+ps_ui_menu_select_with_hint() {
+  local title="${1}"
+  local hint="${2:-}"
+  local zero_label="${3:-返回}"
+  local prompt="${4:-请选择}"
+  shift 4
+  local options=("$@")
+
+  ps_ui_header "${title}"
+  ps_ui_tip "${hint}"
   local i=1
   local option
   for option in "${options[@]}"; do

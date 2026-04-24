@@ -337,7 +337,7 @@ ps_manifest_update() {
     rm -f "${tmp}"
     return 1
   fi
-  mv "${tmp}" "${PS_MANIFEST}"
+  mv -f "${tmp}" "${PS_MANIFEST}"
 }
 
 ps_manifest_array_has() {
@@ -529,12 +529,12 @@ ps_prompt_public_address() {
   local detected=""
   detected="$(ps_detect_public_ipv4 || true)"
   if [[ -n "${detected}" ]]; then
-    ps_log_info "已自动检测公网 IPv4：${detected}"
+    ps_log_info "已自动检测公网 IPv4：${detected}" >&2
     ps_prompt "${message}" "${detected}"
     return 0
   fi
 
-  ps_log_warn "自动检测公网 IPv4 失败，请手动输入可被客户端访问的公网域名或 IP。"
+  ps_log_warn "自动检测公网 IPv4 失败，请手动输入可被客户端访问的公网域名或 IP。" >&2
   ps_prompt_required "${message}"
 }
 
