@@ -64,11 +64,16 @@ ps_route_pick_outbound() {
 
 ps_route_list_entry_candidates() {
   jq -r '
+    ([
+      .stacks[]?
+      | select(.enabled == true)
+      | [("stack-" + .stack_id), "服务入口", (.name // .stack_id), ("stack-" + .stack_id), ("0.0.0.0:" + ((.port // 0)|tostring))]
+    ] +
     [
-      (.stacks[]? | select(.enabled == true) | [("stack-" + .stack_id), "服务入口", (.name // .stack_id), ("stack-" + .stack_id), ("0.0.0.0:" + ((.port // 0)|tostring))]),
-      (.inbounds[]? | select(.enabled != false and .public != true) | [.tag, ("本机入口/" + (.type // "-")), (.tag // "-"), (.tag // "-"), ((.listen // "127.0.0.1") + ":" + ((.port // 0)|tostring))])
-    ]
-    | add
+      .inbounds[]?
+      | select(.enabled != false and .public != true)
+      | [.tag, ("本机入口/" + (.type // "-")), (.tag // "-"), (.tag // "-"), ((.listen // "127.0.0.1") + ":" + ((.port // 0)|tostring))]
+    ])
     | .[]
     | @tsv
   ' "${PS_MANIFEST}" 2>/dev/null
