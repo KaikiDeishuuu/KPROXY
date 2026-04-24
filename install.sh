@@ -570,7 +570,7 @@ ps_service_try_start_engine() {
   local service label
   service="$(ps_engine_service_name "${engine}")"
   label="Xray"
-  [[ "${engine}" == "singbox" ]] && label="sing-box"
+  if [[ "${engine}" == "singbox" ]]; then label="sing-box"; fi
 
   if ! ps_systemd_is_available; then
     ps_ui_warn "未检测到 systemd，已完成配置渲染，请手动启动 ${label}。"
@@ -750,6 +750,14 @@ ps_service_wizard() {
   ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
   ps_service_runtime_result 0 ""
 
+  # REALITY key generation requires xray x25519. Ensure xray is available
+  # before ps_stack_create runs, so the keypair step does not fail on fresh
+  # installs where xray has not been downloaded yet.
+  if ! ps_service_ensure_engine_binary xray; then
+    ps_service_runtime_result 0 "xray-core 安装失败（REALITY 密钥生成需要 xray x25519）"
+    return 1
+  fi
+
   local before_ids after_ids new_stack_id
   before_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
 
@@ -799,7 +807,7 @@ ps_action_create_service() {
   fi
   local stack_info
   stack_info="$(jq -r '.stacks | if length==0 then "" else (sort_by(.created_at // "") | last | "名称：\(.name // "-") | 协议：\(.protocol // "-") | 安全：\(.security // "-") | 地址：\(.server // "-") | 端口：\(.port // "-")") end' "${PS_MANIFEST}")"
-  [[ -n "${stack_info}" ]] && printf "\n创建完成\n%s\n" "${stack_info}"
+  if [[ -n "${stack_info}" ]]; then printf "\n创建完成\n%s\n" "${stack_info}"; fi
   if [[ "${PS_SERVICE_WIZARD_RUNTIME_OK:-0}" == "1" ]]; then
     printf "状态：已生成并启用（含自动入口绑定）\n"
     ps_show_next_steps \
@@ -828,7 +836,7 @@ ps_action_create_local_proxy_entry() {
   ps_inbound_create_local || return 1
   local inbound_info
   inbound_info="$(jq -r '.inbounds | map(select(.public != true)) | if length==0 then "" else (sort_by(.created_at // "") | last | "标签：\(.tag) | 类型：\(.type) | 监听：\(.listen):\(.port)") end' "${PS_MANIFEST}")"
-  [[ -n "${inbound_info}" ]] && printf "\n创建完成\n%s\n" "${inbound_info}"
+  if [[ -n "${inbound_info}" ]]; then printf "\n创建完成\n%s\n" "${inbound_info}"; fi
   ps_show_next_steps \
     "如需链式代理，请前往“本地代理与转发”创建转发规则" \
     "如需导出客户端配置，请前往“订阅与导出”"
