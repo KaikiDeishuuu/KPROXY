@@ -84,11 +84,15 @@ ps_diag_toggle_dns_logging() {
   ps_print_header "切换 DNS 日志"
   local current next
   current="$(jq -r '.logs.dns_log // false' "${PS_MANIFEST}")"
-  next="true"
-  [[ "${current}" == "true" ]] && next="false"
+  if [[ "${current}" == "true" ]]; then
+    next="false"
+  else
+    next="true"
+  fi
 
   ps_manifest_update --argjson dns "${next}" --arg ts "$(ps_now_iso)" '.logs.dns_log = $dns | .meta.updated_at = $ts'
   ps_log_success "DNS 日志已切换为 ${next}"
+  return 0
 }
 
 ps_diag_configure_log_rotation() {
@@ -174,14 +178,22 @@ ps_diag_export_bundle() {
     printf "systemctl 不可用\n" >"${tmpdir}/systemd-singbox-status.txt"
   fi
 
-  if [[ -f "${PS_INSTALL_LOG}" ]]; then tail -n 200 "${PS_INSTALL_LOG}" >"${tmpdir}/install-log-tail.txt"; fi
+  if [[ -f "${PS_INSTALL_LOG}" ]]; then
+    tail -n 200 "${PS_INSTALL_LOG}" >"${tmpdir}/install-log-tail.txt"
+  fi
   local xray_access xray_error singbox_log
   xray_access="$(ps_diag_log_path xray_access)"
   xray_error="$(ps_diag_log_path xray_error)"
   singbox_log="$(ps_diag_log_path singbox_log)"
-  [[ -f "${xray_access}" ]] && tail -n 200 "${xray_access}" >"${tmpdir}/xray-access-tail.txt"
-  [[ -f "${xray_error}" ]] && tail -n 200 "${xray_error}" >"${tmpdir}/xray-error-tail.txt"
-  [[ -f "${singbox_log}" ]] && tail -n 200 "${singbox_log}" >"${tmpdir}/singbox-tail.txt"
+  if [[ -f "${xray_access}" ]]; then
+    tail -n 200 "${xray_access}" >"${tmpdir}/xray-access-tail.txt"
+  fi
+  if [[ -f "${xray_error}" ]]; then
+    tail -n 200 "${xray_error}" >"${tmpdir}/xray-error-tail.txt"
+  fi
+  if [[ -f "${singbox_log}" ]]; then
+    tail -n 200 "${singbox_log}" >"${tmpdir}/singbox-tail.txt"
+  fi
 
   ss -lntup >"${tmpdir}/listening-ports.txt" 2>/dev/null || printf "ss 命令不可用\n" >"${tmpdir}/listening-ports.txt"
 
@@ -192,4 +204,5 @@ ps_diag_export_bundle() {
   rm -rf "${tmpdir}"
 
   ps_log_success "诊断包已导出： ${bundle_file}"
+  return 0
 }

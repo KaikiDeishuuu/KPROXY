@@ -188,7 +188,7 @@ ps_sub_generate_share_links() {
   ps_print_header "生成分享链接"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "subscription")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "subscription")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
 
@@ -212,7 +212,7 @@ ps_sub_generate_base64_subscription() {
   ps_print_header "生成 Base64 订阅"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "subscription")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "subscription")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
 
@@ -343,7 +343,7 @@ ps_sub_export_initialized_rules_bundle() {
   ps_print_header "导出初始化规则包"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "rules")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "rules")"; fi
 
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
   ps_sub_record_export "rules-bundle" "${root}/rules"
@@ -355,7 +355,7 @@ ps_sub_export_clash_meta() {
   ps_print_header "导出 Clash.Meta Config"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "clash")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "clash")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
 
@@ -404,7 +404,7 @@ ps_sub_export_xray_client_config() {
   ps_print_header "导出 Xray 客户端配置"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "xray-client")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "xray-client")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
 
@@ -521,7 +521,7 @@ ps_sub_export_xray_client_config() {
       }' >"${out_file}"
 
     ps_sub_record_export "xray-client" "${out_file}"
-    [[ -z "${first_file}" ]] && first_file="${out_file}"
+    if [[ -z "${first_file}" ]]; then first_file="${out_file}"; fi
     count=$((count + 1))
   done < <(jq -c '.stacks[]? | select(.enabled == true and .protocol == "vless")' "${PS_MANIFEST}")
 
@@ -540,7 +540,7 @@ ps_sub_export_singbox_client_config() {
   ps_print_header "导出 sing-box 客户端配置"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "singbox-client")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "singbox-client")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
   ps_sub_write_initialized_rules_bundle "${root}" || return 1
 
@@ -659,7 +659,7 @@ ps_sub_export_singbox_client_config() {
       }' >"${out_file}"
 
     ps_sub_record_export "singbox-client" "${out_file}"
-    [[ -z "${first_file}" ]] && first_file="${out_file}"
+    if [[ -z "${first_file}" ]]; then first_file="${out_file}"; fi
     count=$((count + 1))
   done < <(jq -c '.stacks[]? | select(.enabled == true and .protocol == "vless")' "${PS_MANIFEST}")
 
@@ -678,7 +678,7 @@ ps_sub_export_local_proxy_templates() {
   ps_print_header "导出带路由的本地代理模板"
 
   local root="${1:-}"
-  [[ -z "${root}" ]] && root="$(ps_sub_create_export_root "local-proxy")"
+  if [[ -z "${root}" ]]; then root="$(ps_sub_create_export_root "local-proxy")"; fi
   ps_sub_prepare_bundle_dirs "${root}" || return 1
 
   local out_file="${root}/local-proxy-routing-template.md"

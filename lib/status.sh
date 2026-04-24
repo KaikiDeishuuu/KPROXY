@@ -47,13 +47,13 @@ ps_status_installation_section() {
   manifest_ok="否"
   services_count=0
 
-  [[ -d "${PS_RUNTIME_DIR}" ]] && runtime_ok="是"
-  [[ -d "${PS_HOME_DIR}" ]] && home_ok="是"
-  [[ -f "${PS_MANIFEST}" ]] && manifest_ok="是"
+  if [[ -d "${PS_RUNTIME_DIR}" ]]; then runtime_ok="是"; fi
+  if [[ -d "${PS_HOME_DIR}" ]]; then home_ok="是"; fi
+  if [[ -f "${PS_MANIFEST}" ]]; then manifest_ok="是"; fi
 
   if ps_systemd_is_available; then
-    ps_systemd_service_exists "${PS_XRAY_SERVICE}" && services_count=$((services_count + 1))
-    ps_systemd_service_exists "${PS_SINGBOX_SERVICE}" && services_count=$((services_count + 1))
+    if ps_systemd_service_exists "${PS_XRAY_SERVICE}"; then services_count=$((services_count + 1)); fi
+    if ps_systemd_service_exists "${PS_SINGBOX_SERVICE}"; then services_count=$((services_count + 1)); fi
   fi
 
   if [[ -n "${launcher}" ]]; then
@@ -102,8 +102,8 @@ ps_status_collect_kprxy_pids() {
   if ps_systemd_is_available; then
     xmain="$(systemctl show -p MainPID --value "${xsvc}" 2>/dev/null || printf "0")"
     smain="$(systemctl show -p MainPID --value "${ssvc}" 2>/dev/null || printf "0")"
-    [[ "${xmain}" =~ ^[0-9]+$ && "${xmain}" -gt 0 ]] && pids+=("${xmain}")
-    [[ "${smain}" =~ ^[0-9]+$ && "${smain}" -gt 0 ]] && pids+=("${smain}")
+    if [[ "${xmain}" =~ ^[0-9]+$ && "${xmain}" -gt 0 ]]; then pids+=("${xmain}"); fi
+    if [[ "${smain}" =~ ^[0-9]+$ && "${smain}" -gt 0 ]]; then pids+=("${smain}"); fi
   fi
 
   local pid cmdline
@@ -444,8 +444,8 @@ ps_status_cert_section() {
     local fullchain_ok key_ok
     fullchain_ok="未安装"
     key_ok="未安装"
-    [[ -f "${fullchain}" ]] && fullchain_ok="已安装"
-    [[ -f "${key}" ]] && key_ok="已安装"
+    if [[ -f "${fullchain}" ]]; then fullchain_ok="已安装"; fi
+    if [[ -f "${key}" ]]; then key_ok="已安装"; fi
 
     printf -- "- 域名：%s\n" "${domain}"
     printf "  fullchain：%s（%s）\n" "${fullchain}" "${fullchain_ok}"
@@ -619,7 +619,7 @@ ps_status_conflict_section() {
       printf -- "- 检测到通用服务名 sing-box.service（可能来自其他项目）。\n"
     fi
   fi
-  [[ "${service_conflict}" -eq 0 ]] && printf -- "- 未检测到通用服务名冲突。\n"
+  if [[ "${service_conflict}" -eq 0 ]]; then printf -- "- 未检测到通用服务名冲突。\n"; fi
 
   local cfg_conflict=0
   local xcfg scfg
@@ -629,7 +629,7 @@ ps_status_conflict_section() {
     cfg_conflict=1
     printf -- "- 配置路径不够隔离：检测到使用通用路径。\n"
   fi
-  [[ "${cfg_conflict}" -eq 0 ]] && printf -- "- 配置路径已隔离（%s 与 %s）。\n" "${xcfg}" "${scfg}"
+  if [[ "${cfg_conflict}" -eq 0 ]]; then printf -- "- 配置路径已隔离（%s 与 %s）。\n" "${xcfg}" "${scfg}"; fi
 
   local cert_conflict=0
   while IFS='|' read -r domain fullchain key; do
@@ -639,7 +639,7 @@ ps_status_conflict_section() {
       printf -- "- 证书路径复用提醒：%s 使用了外部路径（fullchain=%s, key=%s）。\n" "${domain}" "${fullchain}" "${key}"
     fi
   done < <(jq -r '.certificates | to_entries[]? | "\(.key)|\(.value.fullchain // "")|\(.value.key // "")"' "${PS_MANIFEST}" 2>/dev/null)
-  [[ "${cert_conflict}" -eq 0 ]] && printf -- "- 证书路径已隔离在 %s。\n" "${PS_CERT_DIR}"
+  if [[ "${cert_conflict}" -eq 0 ]]; then printf -- "- 证书路径已隔离在 %s。\n" "${PS_CERT_DIR}"; fi
 
   local port_conflict=0
   while IFS='|' read -r scope name port; do
@@ -666,7 +666,7 @@ ps_status_conflict_section() {
     ]
     | .[]
   ' "${PS_MANIFEST}" 2>/dev/null)
-  [[ "${port_conflict}" -eq 0 ]] && printf -- "- 未检测到端口冲突。\n"
+  if [[ "${port_conflict}" -eq 0 ]]; then printf -- "- 未检测到端口冲突。\n"; fi
 }
 
 ps_status_summary() {
