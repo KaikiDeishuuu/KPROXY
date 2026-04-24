@@ -464,8 +464,6 @@ ps_render_singbox_outbounds_json() {
           {type: "direct", tag: .tag}
         elif .type == "block" then
           {type: "block", tag: .tag}
-        elif .type == "dns" then
-          {type: "dns", tag: .tag}
         elif .type == "socks5" then
           {
             type: "socks",

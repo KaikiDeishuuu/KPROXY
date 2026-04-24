@@ -412,22 +412,13 @@ ps_port_listener_owner() {
   if ! ps_command_exists ss; then
     return 1
   fi
+  local line proc pid
+  line="$(ss -H -lntup 2>/dev/null | awk -v p="${port}" '$5 ~ ("(^|[:\\]])" p "$") { print; exit }')"
+  [[ -n "${line}" ]] || return 1
 
-  ss -H -lntup 2>/dev/null \
-    | awk -v p="${port}" '
-      $5 ~ ("(^|[:\\]])" p "$") {
-        proc="-"
-        if (match($0, /users:\(\("([^"]+)"/, m)) {
-          proc=m[1]
-        }
-        pid="-"
-        if (match($0, /pid=([0-9]+)/, k)) {
-          pid=k[1]
-        }
-        print proc "|" pid
-        exit
-      }
-    '
+  proc="$(printf '%s\n' "${line}" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
+  pid="$(printf '%s\n' "${line}" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p')"
+  printf '%s|%s\n' "${proc:--}" "${pid:--}"
 }
 
 ps_port_is_in_use() {
