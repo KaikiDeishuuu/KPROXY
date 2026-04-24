@@ -272,6 +272,7 @@ ps_render_xray_routes_json() {
           network: ((.network // []) | map(ascii_downcase) | join(","))
         }
       | with_entries(select(.value != [] and .value != "" and .value != null))
+      | select((has("inboundTag")) or (has("domain")) or (has("ip")) or (has("network")))
     ]
   ' "${PS_MANIFEST}"
 }
@@ -538,6 +539,7 @@ ps_render_singbox_routes_json() {
           network: ((.network // []) | map(ascii_downcase))
         }
       | with_entries(select(.value != [] and .value != "" and .value != null))
+      | select((has("inbound")) or (has("domain_suffix")) or (has("domain_keyword")) or (has("ip_cidr")) or (has("network")))
     ]
   ' "${PS_MANIFEST}"
 }
