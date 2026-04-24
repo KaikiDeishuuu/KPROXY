@@ -288,6 +288,23 @@ ps_bootstrap_install_launcher() {
   ps_launcher_print_success "${PS_BOOTSTRAP_INSTALL_DIR}" "${PS_BOOTSTRAP_LAUNCHER_PATH}"
 }
 
+ps_bootstrap_copy_file_atomic() {
+  local source_file="${1}"
+  local target_file="${2}"
+  local tmp_file=""
+
+  tmp_file="$(mktemp "${target_file}.tmp.XXXXXX")" || return 1
+  if ! cp -a "${source_file}" "${tmp_file}"; then
+    rm -f "${tmp_file}"
+    return 1
+  fi
+
+  if ! mv -f "${tmp_file}" "${target_file}"; then
+    rm -f "${tmp_file}"
+    return 1
+  fi
+}
+
 ps_bootstrap_sync_repo() {
   local source_dir="${1}"
   ps_bootstrap_resolve_paths
@@ -322,7 +339,10 @@ ps_bootstrap_sync_repo() {
   rm -rf "${PS_BOOTSTRAP_INSTALL_DIR}/lib" "${PS_BOOTSTRAP_INSTALL_DIR}/templates"
   cp -a "${source_dir}/lib" "${PS_BOOTSTRAP_INSTALL_DIR}/lib"
   cp -a "${source_dir}/templates" "${PS_BOOTSTRAP_INSTALL_DIR}/templates"
-  cp -a "${source_dir}/install.sh" "${PS_BOOTSTRAP_INSTALL_DIR}/install.sh"
+  ps_bootstrap_copy_file_atomic "${source_dir}/install.sh" "${PS_BOOTSTRAP_INSTALL_DIR}/install.sh" || {
+    ps_bootstrap_error "同步 install.sh 失败。"
+    return 1
+  }
   cp -a "${source_dir}/forward.sh" "${PS_BOOTSTRAP_INSTALL_DIR}/forward.sh"
   cp -a "${source_dir}/README.md" "${PS_BOOTSTRAP_INSTALL_DIR}/README.md"
 
