@@ -131,9 +131,9 @@ ps_status_engine_section() {
     fi
 
     if [[ "${#pids[@]}" -gt 0 ]]; then
-      printf "- %s：%s（PID %s，%s）\n" "${label}" "${runtime_text}" "$(IFS=,; echo "${pids[*]}")" "${systemd_text}"
+      printf -- "- %s：%s（PID %s，%s）\n" "${label}" "${runtime_text}" "$(IFS=,; echo "${pids[*]}")" "${systemd_text}"
     else
-      printf "- %s：%s（%s）\n" "${label}" "${runtime_text}" "${systemd_text}"
+      printf -- "- %s：%s（%s）\n" "${label}" "${runtime_text}" "${systemd_text}"
     fi
 
     printf "  可执行文件：%s\n" "${bin}"
@@ -146,7 +146,7 @@ ps_status_ports_section() {
   ps_status_section "端口监听"
 
   if [[ ! -f "${PS_MANIFEST}" ]]; then
-    printf "- 未找到 manifest，无法检查端口。\n"
+    printf -- "- 未找到 manifest，无法检查端口。\n"
     return 0
   fi
 
@@ -156,7 +156,7 @@ ps_status_ports_section() {
     row_count=$((row_count + 1))
 
     if [[ "${note}" == "remote" ]]; then
-      printf "- [%s] %s 端口 %s：远端目标端口，不执行本机监听判定\n" "${scope}" "${name}" "${port}"
+      printf -- "- [%s] %s 端口 %s：远端目标端口，不执行本机监听判定\n" "${scope}" "${name}" "${port}"
       continue
     fi
 
@@ -170,9 +170,9 @@ ps_status_ports_section() {
 
     if [[ -n "${owner}" ]]; then
       IFS='|' read -r proc pid <<<"${owner}"
-      printf "- [%s] %s 端口 %s：%s（进程=%s，PID=%s）\n" "${scope}" "${name}" "${port}" "${state}" "${proc:-未知}" "${pid:-未知}"
+      printf -- "- [%s] %s 端口 %s：%s（进程=%s，PID=%s）\n" "${scope}" "${name}" "${port}" "${state}" "${proc:-未知}" "${pid:-未知}"
     else
-      printf "- [%s] %s 端口 %s：%s\n" "${scope}" "${name}" "${port}" "${state}"
+      printf -- "- [%s] %s 端口 %s：%s\n" "${scope}" "${name}" "${port}" "${state}"
     fi
   done < <(
     jq -r '
@@ -187,7 +187,7 @@ ps_status_ports_section() {
   )
 
   if [[ "${row_count}" -eq 0 ]]; then
-    printf "- manifest 中未记录需要检查的端口。\n"
+    printf -- "- manifest 中未记录需要检查的端口。\n"
   fi
 }
 
@@ -237,7 +237,7 @@ ps_status_config_section() {
     cfg="$(ps_engine_config_path "${engine}")"
     if [[ -f "${cfg}" ]]; then
       exists="存在"
-      mtime="$(stat -c '%y' "${cfg}" 2>/dev/null || date -r "${cfg}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '-')"
+      mtime="$(stat -c '%y' "${cfg}" 2>/dev/null || date -r "${cfg}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf -- '-')"
     else
       exists="不存在"
       mtime="-"
@@ -248,7 +248,7 @@ ps_status_config_section() {
 
     validate_msg="$(ps_status_validate_config_now "${engine}" || true)"
 
-    printf "- %s\n" "${label}"
+    printf -- "- %s\n" "${label}"
     printf "  配置文件：%s（%s）\n" "${cfg}" "${exists}"
     printf "  最后修改：%s\n" "${mtime}"
     if [[ -n "${render_ok}" ]]; then
@@ -264,7 +264,7 @@ ps_status_systemd_section() {
   ps_status_section "systemd 状态"
 
   if ! ps_systemd_is_available; then
-    printf "- 当前系统不可用 systemctl。\n"
+    printf -- "- 当前系统不可用 systemctl。\n"
     return 0
   fi
 
@@ -275,10 +275,10 @@ ps_status_systemd_section() {
     service="$(ps_engine_service_name "${engine}")"
 
     if ps_systemd_service_exists "${service}"; then
-      printf "- %s：%s.service active=%s enabled=%s\n" \
+      printf -- "- %s：%s.service active=%s enabled=%s\n" \
         "${label}" "${service}" "$(ps_systemd_active_state "${service}")" "$(ps_systemd_enabled_state "${service}")"
     else
-      printf "- %s：未检测到 %s.service（当前未由 systemd 托管）\n" "${label}" "${service}"
+      printf -- "- %s：未检测到 %s.service（当前未由 systemd 托管）\n" "${label}" "${service}"
     fi
   done
 }
@@ -299,14 +299,14 @@ ps_status_cert_section() {
   ps_status_section "证书状态"
 
   if [[ ! -f "${PS_MANIFEST}" ]]; then
-    printf "- 未找到 manifest，无法检查证书。\n"
+    printf -- "- 未找到 manifest，无法检查证书。\n"
     return 0
   fi
 
   local has_cert
   has_cert="$(jq -r '(.certificates | length) > 0' "${PS_MANIFEST}" 2>/dev/null || printf "false")"
   if [[ "${has_cert}" != "true" ]]; then
-    printf "- 未配置证书。\n"
+    printf -- "- 未配置证书。\n"
     return 0
   fi
 
@@ -317,7 +317,7 @@ ps_status_cert_section() {
     [[ -f "${fullchain}" ]] && fullchain_ok="已安装"
     [[ -f "${key}" ]] && key_ok="已安装"
 
-    printf "- 域名：%s\n" "${domain}"
+    printf -- "- 域名：%s\n" "${domain}"
     printf "  fullchain：%s（%s）\n" "${fullchain}" "${fullchain_ok}"
     printf "  私钥：%s（%s）\n" "${key}" "${key_ok}"
 
@@ -402,7 +402,7 @@ ps_status_external_engine_instances() {
       continue
     fi
     found=1
-    printf "- 检测到其他 %s 实例：PID=%s CMD=%s\n" "${label}" "${pid}" "${cmdline}"
+    printf -- "- 检测到其他 %s 实例：PID=%s CMD=%s\n" "${label}" "${pid}" "${cmdline}"
     if [[ "${label}" == "Xray" ]]; then
       printf "  当前运行中的 Xray 似乎不属于 kprxy 管理。\n"
     fi
@@ -431,21 +431,21 @@ ps_status_conflict_section() {
   fi
 
   if [[ "${has_external}" -eq 0 ]]; then
-    printf "- 未检测到 kprxy 之外的 Xray/sing-box 进程。\n"
+    printf -- "- 未检测到 kprxy 之外的 Xray/sing-box 进程。\n"
   fi
 
   local service_conflict=0
   if ps_systemd_is_available; then
     if ps_systemd_service_exists xray; then
       service_conflict=1
-      printf "- 检测到通用服务名 xray.service（可能来自其他项目）。\n"
+      printf -- "- 检测到通用服务名 xray.service（可能来自其他项目）。\n"
     fi
     if ps_systemd_service_exists sing-box; then
       service_conflict=1
-      printf "- 检测到通用服务名 sing-box.service（可能来自其他项目）。\n"
+      printf -- "- 检测到通用服务名 sing-box.service（可能来自其他项目）。\n"
     fi
   fi
-  [[ "${service_conflict}" -eq 0 ]] && printf "- 未检测到通用服务名冲突。\n"
+  [[ "${service_conflict}" -eq 0 ]] && printf -- "- 未检测到通用服务名冲突。\n"
 
   local cfg_conflict=0
   local xcfg scfg
@@ -453,19 +453,19 @@ ps_status_conflict_section() {
   scfg="$(ps_engine_config_path singbox)"
   if [[ "${xcfg}" == "/etc/xray/config.json" || "${scfg}" == "/etc/sing-box/config.json" ]]; then
     cfg_conflict=1
-    printf "- 配置路径不够隔离：检测到使用通用路径。\n"
+    printf -- "- 配置路径不够隔离：检测到使用通用路径。\n"
   fi
-  [[ "${cfg_conflict}" -eq 0 ]] && printf "- 配置路径已隔离（%s 与 %s）。\n" "${xcfg}" "${scfg}"
+  [[ "${cfg_conflict}" -eq 0 ]] && printf -- "- 配置路径已隔离（%s 与 %s）。\n" "${xcfg}" "${scfg}"
 
   local cert_conflict=0
   while IFS='|' read -r domain fullchain key; do
     [[ -n "${domain}" ]] || continue
     if [[ "${fullchain}" != ${PS_CERT_DIR}/* || "${key}" != ${PS_CERT_DIR}/* ]]; then
       cert_conflict=1
-      printf "- 证书路径复用提醒：%s 使用了外部路径（fullchain=%s, key=%s）。\n" "${domain}" "${fullchain}" "${key}"
+      printf -- "- 证书路径复用提醒：%s 使用了外部路径（fullchain=%s, key=%s）。\n" "${domain}" "${fullchain}" "${key}"
     fi
   done < <(jq -r '.certificates | to_entries[]? | "\(.key)|\(.value.fullchain // "")|\(.value.key // "")"' "${PS_MANIFEST}" 2>/dev/null)
-  [[ "${cert_conflict}" -eq 0 ]] && printf "- 证书路径已隔离在 %s。\n" "${PS_CERT_DIR}"
+  [[ "${cert_conflict}" -eq 0 ]] && printf -- "- 证书路径已隔离在 %s。\n" "${PS_CERT_DIR}"
 
   local port_conflict=0
   while IFS='|' read -r scope name port; do
@@ -483,7 +483,7 @@ ps_status_conflict_section() {
     fi
 
     port_conflict=1
-    printf "- 检测到端口冲突：%s（%s）端口 %s 已被占用，进程=%s PID=%s。\n" "${scope}" "${name}" "${port}" "${proc:-未知}" "${pid:-未知}"
+    printf -- "- 检测到端口冲突：%s（%s）端口 %s 已被占用，进程=%s PID=%s。\n" "${scope}" "${name}" "${port}" "${proc:-未知}" "${pid:-未知}"
   done < <(jq -r '
     [
       (.stacks[]? | "协议栈|" + (.name // .stack_id // "-") + "|" + ((.port // empty)|tostring)),
@@ -492,7 +492,7 @@ ps_status_conflict_section() {
     ]
     | .[]
   ' "${PS_MANIFEST}" 2>/dev/null)
-  [[ "${port_conflict}" -eq 0 ]] && printf "- 未检测到端口冲突。\n"
+  [[ "${port_conflict}" -eq 0 ]] && printf -- "- 未检测到端口冲突。\n"
 }
 
 ps_status_summary() {
