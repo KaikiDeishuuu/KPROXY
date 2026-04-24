@@ -62,6 +62,133 @@ ps_route_pick_outbound() {
   printf "%s" "${tag}"
 }
 
+ps_route_list_entry_candidates() {
+  jq -r '
+    [
+      (.stacks[]? | select(.enabled == true) | [("stack-" + .stack_id), "服务入口", (.name // .stack_id), ("stack-" + .stack_id), ("0.0.0.0:" + ((.port // 0)|tostring))]),
+      (.inbounds[]? | select(.enabled != false and .public != true) | [.tag, ("本机入口/" + (.type // "-")), (.tag // "-"), (.tag // "-"), ((.listen // "127.0.0.1") + ":" + ((.port // 0)|tostring))])
+    ]
+    | add
+    | .[]
+    | @tsv
+  ' "${PS_MANIFEST}" 2>/dev/null
+}
+
+ps_route_pick_entry_sources_csv() {
+  local allow_any="${1:-true}"
+  mapfile -t rows < <(ps_route_list_entry_candidates)
+
+  if [[ "${#rows[@]}" -eq 0 ]]; then
+    ps_log_warn "当前没有可选入口，请先创建服务或本机代理入口。"
+    return 1
+  fi
+
+  printf "\n可选入口（入口 -> 规则 -> 出口）：\n" >&2
+  local i=1 row value class display tag listen
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r value class display tag listen <<<"${row}"
+    printf "%d) %s | 名称=%s | 运行标签=%s | 监听=%s\n" "${i}" "${class}" "${display}" "${tag}" "${listen}" >&2
+    i=$((i + 1))
+  done
+
+  printf "1) 从列表单选（推荐）\n" >&2
+  printf "2) 从列表多选\n" >&2
+  printf "3) 手动输入标签（高级）\n" >&2
+  if [[ "${allow_any}" == "true" ]]; then
+    printf "4) 不限制入口（匹配任意入口）\n" >&2
+  fi
+
+  local mode
+  mode="$(ps_prompt_required "请选择入口来源模式")"
+
+  case "${mode}" in
+    1)
+      local choice
+      choice="$(ps_prompt_required "请选择入口编号")"
+      if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
+        ps_log_error "入口选择无效"
+        return 1
+      fi
+      IFS=$'\t' read -r value class display tag listen <<<"${rows[choice-1]}"
+      printf "已选择入口：%s（运行标签=%s，监听=%s）\n" "${display}" "${value}" "${listen}" >&2
+      printf "%s" "${value}"
+      ;;
+    2)
+      local selected_csv="" action choice_idx mark
+      while true; do
+        printf "\n多选模式：输入编号可切换勾选，d=完成，c=清空，q=取消\n" >&2
+        local j=1
+        for row in "${rows[@]}"; do
+          IFS=$'\t' read -r value class display tag listen <<<"${row}"
+          mark="[ ]"
+          if [[ ",${selected_csv}," == *",${value},"* ]]; then
+            mark="[x]"
+          fi
+          printf "%s %d) %s | 名称=%s | 运行标签=%s | 监听=%s\n" "${mark}" "${j}" "${class}" "${display}" "${tag}" "${listen}" >&2
+          j=$((j + 1))
+        done
+
+        action="$(ps_prompt_required "请输入编号/d/c/q")"
+        case "${action}" in
+          d|D)
+            if [[ -z "${selected_csv}" ]]; then
+              ps_log_warn "尚未选择任何入口。"
+              continue
+            fi
+            break
+            ;;
+          c|C)
+            selected_csv=""
+            ;;
+          q|Q)
+            ps_log_info "已取消多选"
+            return 1
+            ;;
+          *)
+            if ! [[ "${action}" =~ ^[0-9]+$ ]]; then
+              ps_log_error "输入无效：${action}"
+              continue
+            fi
+            choice_idx="${action}"
+            if ((choice_idx < 1 || choice_idx > ${#rows[@]})); then
+              ps_log_error "入口编号无效：${choice_idx}"
+              continue
+            fi
+            IFS=$'\t' read -r value _ <<<"${rows[choice_idx-1]}"
+            if [[ ",${selected_csv}," == *",${value},"* ]]; then
+              selected_csv="$(printf '%s' "${selected_csv}" | awk -v rm="${value}" -F',' 'BEGIN{OFS=","} {for(i=1;i<=NF;i++){if($i!="" && $i!=rm){out=(out?out OFS $i:$i)}}} END{print out}')"
+            else
+              if [[ -z "${selected_csv}" ]]; then
+                selected_csv="${value}"
+              else
+                selected_csv+=",${value}"
+              fi
+            fi
+            ;;
+        esac
+      done
+      printf "已选择入口标签：%s\n" "${selected_csv}" >&2
+      printf "%s" "${selected_csv}"
+      ;;
+    3)
+      local manual
+      manual="$(ps_prompt_required "请输入入口标签（逗号分隔）")"
+      printf "%s" "${manual}"
+      ;;
+    4)
+      if [[ "${allow_any}" != "true" ]]; then
+        ps_log_error "选择无效"
+        return 1
+      fi
+      printf ""
+      ;;
+    *)
+      ps_log_error "选择无效"
+      return 1
+      ;;
+  esac
+}
+
 ps_route_name_exists() {
   local name="${1:-}"
   jq -e --arg n "${name}" '.routes | any(.name == $n)' "${PS_MANIFEST}" >/dev/null 2>&1
@@ -119,6 +246,7 @@ ps_route_build_rule_json() {
 ps_route_create_rule() {
   ps_print_header "创建路由规则"
   printf "提示：通常只需要设置“入口匹配 + 上游出口”，其余条件可留空。\n"
+  printf "提示：入口匹配支持填写本机入口标签，也支持填写服务名称/stack_id（会自动映射到运行入站标签）。\n"
 
   local name priority inbound_tags domain_suffix domain_keyword ip_cidr network outbound fallback
   name="$(ps_prompt_required "规则名称")"
@@ -141,7 +269,7 @@ ps_route_create_rule() {
     ip_cidr=""
     network=""
   else
-    inbound_tags="$(ps_prompt "入口标签匹配（逗号分隔，可选）" "")"
+    inbound_tags="$(ps_route_pick_entry_sources_csv "true")" || return 1
     domain_suffix="$(ps_prompt "域名后缀匹配（逗号分隔，可选）" "")"
     domain_keyword="$(ps_prompt "域名关键词匹配（逗号分隔，可选）" "")"
     ip_cidr="$(ps_prompt "IP/CIDR 匹配（逗号分隔，可选）" "")"
@@ -153,12 +281,26 @@ ps_route_create_rule() {
   local route_json
   route_json="$(ps_route_build_rule_json "${name}" "${priority}" "${inbound_tags}" "${domain_suffix}" "${domain_keyword}" "${ip_cidr}" "${network}" "${outbound}")"
 
+  printf "\n保存前确认\n"
+  printf "规则：%s | priority=%s\n" "${name}" "${priority}"
+  printf "入口：%s\n" "${inbound_tags:--任意入口--}"
+  printf "出口：%s\n" "${outbound}"
+  printf "域名后缀：%s | 域名关键词：%s | IP/CIDR：%s | 网络：%s\n" \
+    "${domain_suffix:--}" "${domain_keyword:--}" "${ip_cidr:--}" "${network:--}"
+  if ! ps_confirm "确认保存该路由规则？" "Y"; then
+    ps_log_info "已取消"
+    return 0
+  fi
+
   ps_manifest_update --argjson route "${route_json}" --arg ts "$(ps_now_iso)" '.routes += [$route] | .meta.updated_at = $ts'
 
   ps_log_success "路由规则已创建： ${name}"
   printf "摘要：名称=%s | priority=%s | 出口=%s | 启用=true\n" "${name}" "${priority}" "${outbound}"
+  printf "匹配条件：入口标签=%s | 域名后缀=%s | 域名关键词=%s | IP/CIDR=%s | 网络=%s\n" \
+    "${inbound_tags:--}" "${domain_suffix:--}" "${domain_keyword:--}" "${ip_cidr:--}" "${network:--}"
+  printf "流量分配：匹配此规则的流量将转发到上游出口 %s。\n" "${outbound}"
   printf "下一步建议：\n"
-  printf -- "- 可前往“路由与规则”测试匹配\n"
+  printf -- "- 可前往“路由规则”测试匹配\n"
   printf -- "- 可前往“运行状态与诊断”查看应用状态\n"
 }
 
@@ -168,9 +310,38 @@ ps_route_edit_rule() {
   name="$(ps_route_pick_name)" || return 1
 
   local priority enabled inbound_tags domain_suffix domain_keyword ip_cidr network outbound_choice outbound
+  local inbound_tags_apply=0
   priority="$(ps_prompt "新优先级（留空保持）" "")"
   enabled="$(ps_prompt "启用状态 true/false（留空保持）" "")"
-  inbound_tags="$(ps_prompt "入口标签匹配（逗号分隔，留空保持）" "")"
+  printf "入口匹配修改方式：\n"
+  printf "1) 保持不变（默认）\n"
+  printf "2) 从列表选择入口（推荐）\n"
+  printf "3) 手动输入入口标签（高级）\n"
+  printf "4) 清空入口匹配（改为任意入口）\n"
+  local inbound_mode
+  inbound_mode="$(ps_prompt "请选择" "1")"
+  case "${inbound_mode}" in
+    ""|1)
+      inbound_tags=""
+      inbound_tags_apply=0
+      ;;
+    2)
+      inbound_tags="$(ps_route_pick_entry_sources_csv "true")" || return 1
+      inbound_tags_apply=1
+      ;;
+    3)
+      inbound_tags="$(ps_prompt_required "请输入入口标签（逗号分隔）")"
+      inbound_tags_apply=1
+      ;;
+    4)
+      inbound_tags=""
+      inbound_tags_apply=1
+      ;;
+    *)
+      ps_log_error "选择无效"
+      return 1
+      ;;
+  esac
   domain_suffix="$(ps_prompt "域名后缀匹配（逗号分隔，留空保持）" "")"
   domain_keyword="$(ps_prompt "域名关键词匹配（逗号分隔，留空保持）" "")"
   ip_cidr="$(ps_prompt "IP/CIDR 匹配（逗号分隔，留空保持）" "")"
@@ -190,7 +361,7 @@ ps_route_edit_rule() {
   local jq_filter='.routes |= map(if .name == $name then . else . end)'
   [[ -n "${priority}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .priority = ($priority|tonumber) else . end)'
   [[ -n "${enabled}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .enabled = ($enabled == "true") else . end)'
-  [[ -n "${inbound_tags}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .inbound_tag = $inbound_tag else . end)'
+  [[ "${inbound_tags_apply}" == "1" ]] && jq_filter+=' | .routes |= map(if .name == $name then .inbound_tag = $inbound_tag else . end)'
   [[ -n "${domain_suffix}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .domain_suffix = $domain_suffix else . end)'
   [[ -n "${domain_keyword}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .domain_keyword = $domain_keyword else . end)'
   [[ -n "${ip_cidr}" ]] && jq_filter+=' | .routes |= map(if .name == $name then .ip_cidr = $ip_cidr else . end)'
@@ -425,14 +596,43 @@ ps_route_ip_match() {
   return 1
 }
 
+ps_route_expand_inbound_aliases_json() {
+  local tags_json="${1:-[]}"
+  jq -c \
+    --argjson tags "${tags_json}" \
+    '
+      . as $root
+      | [
+          $tags[]? as $t
+          | (
+              [($root.inbounds[]?.tag | select(. == $t))]
+              + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+            ) as $mapped
+          | if ($mapped | length) > 0 then
+              ($mapped[] | select(. != null and . != ""))
+            else
+              $t
+            end
+        ]
+      | unique
+    ' "${PS_MANIFEST}" 2>/dev/null
+}
+
 ps_route_test_match() {
   ps_print_header "测试路由匹配"
 
-  local inbound_tag domain ip network
-  inbound_tag="$(ps_prompt "入口标签" "")"
+  local inbound_tag domain ip network input_tags_json resolved_input_tags_json
+  inbound_tag="$(ps_prompt "入口标签/服务名称/服务ID" "")"
   domain="$(ps_prompt "域名" "")"
   ip="$(ps_prompt "IP" "")"
   network="$(ps_prompt "网络（tcp/udp）" "tcp")"
+
+  input_tags_json="$(jq -nc --arg t "${inbound_tag}" 'if $t == "" then [] else [$t] end')"
+  resolved_input_tags_json="$(ps_route_expand_inbound_aliases_json "${input_tags_json}")"
+
+  if [[ -n "${inbound_tag}" ]]; then
+    printf "测试入口解析：%s => %s\n" "${inbound_tag}" "$(jq -r 'if length==0 then "-" else join(",") end' <<<"${resolved_input_tags_json}")"
+  fi
 
   mapfile -t routes < <(jq -c '.routes | sort_by(.priority)[] | select(.enabled != false)' "${PS_MANIFEST}")
   if [[ "${#routes[@]}" -eq 0 ]]; then
@@ -446,15 +646,16 @@ ps_route_test_match() {
     name="$(jq -r '.name' <<<"${route}")"
     outbound="$(jq -r '.outbound' <<<"${route}")"
 
-    local inbound_json suffix_json keyword_json cidr_json network_json
+    local inbound_json resolved_inbound_json suffix_json keyword_json cidr_json network_json
     inbound_json="$(jq -c '.inbound_tag // []' <<<"${route}")"
+    resolved_inbound_json="$(ps_route_expand_inbound_aliases_json "${inbound_json}")"
     suffix_json="$(jq -c '.domain_suffix // []' <<<"${route}")"
     keyword_json="$(jq -c '.domain_keyword // []' <<<"${route}")"
     cidr_json="$(jq -c '.ip_cidr // []' <<<"${route}")"
     network_json="$(jq -c '.network // []' <<<"${route}")"
 
-    if [[ "$(jq 'length' <<<"${inbound_json}")" -gt 0 ]]; then
-      if ! jq -e --arg t "${inbound_tag}" 'index($t) != null' <<<"${inbound_json}" >/dev/null; then
+    if [[ "$(jq 'length' <<<"${resolved_inbound_json}")" -gt 0 ]]; then
+      if ! jq -e --argjson input "${resolved_input_tags_json}" 'any($input[]?; index(.) != null)' <<<"${resolved_inbound_json}" >/dev/null; then
         continue
       fi
     fi
@@ -475,7 +676,7 @@ ps_route_test_match() {
       fi
     fi
 
-    printf "匹配到规则： %s => 出口=%s\n" "${name}" "${outbound}"
+    printf "匹配到规则： %s => 出口=%s（入口条件=%s）\n" "${name}" "${outbound}" "$(jq -r 'if length==0 then "任意" else join(",") end' <<<"${resolved_inbound_json}")"
     matched=1
     break
   done

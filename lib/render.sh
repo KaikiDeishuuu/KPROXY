@@ -336,20 +336,37 @@ ps_render_xray_outbounds_json() {
 
 ps_render_xray_routes_json() {
   jq -c '
-    [
-      .routes[]?
-      | select(.enabled != false)
-      | {
-          type: "field",
-          outboundTag: .outbound,
-          inboundTag: (.inbound_tag // []),
-          domain: (([.domain_suffix[]? | "domain:" + .] + [.domain_keyword[]? | "keyword:" + .])),
-          ip: (.ip_cidr // []),
-          network: ((.network // []) | map(ascii_downcase) | join(","))
-        }
-      | with_entries(select(.value != [] and .value != "" and .value != null))
-      | select((has("inboundTag")) or (has("domain")) or (has("ip")) or (has("network")))
-    ]
+    . as $root
+    | [
+        .routes[]?
+        | select(.enabled != false)
+        | (.inbound_tag // []) as $raw_tags
+        | (
+            [
+              $raw_tags[]? as $t
+              | (
+                  [($root.inbounds[]?.tag | select(. == $t))]
+                  + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+                ) as $mapped
+              | if ($mapped | length) > 0 then
+                  ($mapped[] | select(. != null and . != ""))
+                else
+                  $t
+                end
+            ]
+            | unique
+          ) as $expanded_inbound_tags
+        | {
+            type: "field",
+            outboundTag: .outbound,
+            inboundTag: $expanded_inbound_tags,
+            domain: (([.domain_suffix[]? | "domain:" + .] + [.domain_keyword[]? | "keyword:" + .])),
+            ip: (.ip_cidr // []),
+            network: ((.network // []) | map(ascii_downcase) | join(","))
+          }
+        | with_entries(select(.value != [] and .value != "" and .value != null))
+        | select((has("inboundTag")) or (has("domain")) or (has("ip")) or (has("network")))
+      ]
   ' "${PS_MANIFEST}"
 }
 
@@ -609,20 +626,37 @@ ps_render_singbox_outbounds_json() {
 
 ps_render_singbox_routes_json() {
   jq -c '
-    [
-      .routes[]?
-      | select(.enabled != false)
-      | {
-          outbound: .outbound,
-          inbound: (.inbound_tag // []),
-          domain_suffix: (.domain_suffix // []),
-          domain_keyword: (.domain_keyword // []),
-          ip_cidr: (.ip_cidr // []),
-          network: ((.network // []) | map(ascii_downcase))
-        }
-      | with_entries(select(.value != [] and .value != "" and .value != null))
-      | select((has("inbound")) or (has("domain_suffix")) or (has("domain_keyword")) or (has("ip_cidr")) or (has("network")))
-    ]
+    . as $root
+    | [
+        .routes[]?
+        | select(.enabled != false)
+        | (.inbound_tag // []) as $raw_tags
+        | (
+            [
+              $raw_tags[]? as $t
+              | (
+                  [($root.inbounds[]?.tag | select(. == $t))]
+                  + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+                ) as $mapped
+              | if ($mapped | length) > 0 then
+                  ($mapped[] | select(. != null and . != ""))
+                else
+                  $t
+                end
+            ]
+            | unique
+          ) as $expanded_inbound_tags
+        | {
+            outbound: .outbound,
+            inbound: $expanded_inbound_tags,
+            domain_suffix: (.domain_suffix // []),
+            domain_keyword: (.domain_keyword // []),
+            ip_cidr: (.ip_cidr // []),
+            network: ((.network // []) | map(ascii_downcase))
+          }
+        | with_entries(select(.value != [] and .value != "" and .value != null))
+        | select((has("inbound")) or (has("domain_suffix")) or (has("domain_keyword")) or (has("ip_cidr")) or (has("network")))
+      ]
   ' "${PS_MANIFEST}"
 }
 

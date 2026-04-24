@@ -273,6 +273,67 @@ ps_status_reality_applied_state() {
   return 1
 }
 
+ps_status_first_route_for_inbound_json() {
+  local inbound_tag="${1:-}"
+  [[ -n "${inbound_tag}" ]] || return 0
+
+  jq -c --arg itag "${inbound_tag}" '
+    . as $root
+    | [
+        .routes[]?
+        | select(.enabled != false)
+        | (.inbound_tag // []) as $raw_tags
+        | (
+            [
+              $raw_tags[]? as $t
+              | (
+                  [($root.inbounds[]?.tag | select(. == $t))]
+                  + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+                ) as $mapped
+              | if ($mapped | length) > 0 then
+                  ($mapped[] | select(. != null and . != ""))
+                else
+                  $t
+                end
+            ]
+            | unique
+          ) as $expanded
+        | select(($expanded | length) == 0 or ($expanded | index($itag) != null))
+      ]
+    | sort_by(.priority // 1000000)
+    | if length == 0 then null else .[0] end
+  ' "${PS_MANIFEST}" 2>/dev/null || true
+}
+
+ps_status_outbound_diagnose_line() {
+  local outbound_tag="${1:-}"
+  [[ -n "${outbound_tag}" ]] || { printf "未知出口"; return 0; }
+
+  local line
+  line="$(jq -r --arg tag "${outbound_tag}" '
+    .outbounds[]? | select(.tag == $tag)
+    | (
+        "tag=" + (.tag // "-")
+        + " | type=" + (.type // "-")
+        + " | remote=" + ((.server // "-") + ":" + ((.port // 0)|tostring))
+        + " | auth="
+        + (
+            if (.type == "socks5" or .type == "http") then
+              (if ((.auth.username // "") != "" and (.auth.password // "") != "") then "已配置" else "未配置" end)
+            else
+              "-"
+            end
+          )
+      )
+  ' "${PS_MANIFEST}" 2>/dev/null | head -n1)"
+
+  if [[ -z "${line}" ]]; then
+    printf "tag=%s（未在 manifest 中找到）" "${outbound_tag}"
+    return 0
+  fi
+  printf "%s" "${line}"
+}
+
 ps_status_reality_section() {
   ps_status_section "VLESS-REALITY 诊断"
 
@@ -286,7 +347,7 @@ ps_status_reality_section() {
     [[ -n "${stack_id}" ]] || continue
     count=$((count + 1))
 
-    local listening owner proc pid listening_text applied_state
+    local listening owner proc pid listening_text applied_state runtime_inbound_tag
     listening="否"
     proc="-"
     pid="-"
@@ -300,6 +361,7 @@ ps_status_reality_section() {
     listening_text="监听=${listening}（进程=${proc:-未知}，PID=${pid:-未知}）"
 
     applied_state="$(ps_status_reality_applied_state "${engine}" "${updated_at}")"
+    runtime_inbound_tag="stack-${stack_id}"
 
     printf -- "- 服务：%s（%s）\n" "${name}" "${stack_id}"
     printf "  address：%s\n" "${address}"
@@ -312,8 +374,22 @@ ps_status_reality_section() {
     printf "  publicKey：%s\n" "${public_key:--}"
     printf "  shortId：%s\n" "${short_id:--}"
     printf "  证书要求：REALITY 默认不要求节点域名证书\n"
+    printf "  运行入站标签：%s\n" "${runtime_inbound_tag}"
     printf "  监听状态：%s\n" "${listening_text}"
     printf "  应用状态：%s（引擎=%s）\n" "${applied_state}" "${engine}"
+
+    local first_route_json first_route_name first_route_outbound first_route_priority outbound_diag
+    first_route_json="$(ps_status_first_route_for_inbound_json "${runtime_inbound_tag}")"
+    if [[ -n "${first_route_json}" && "${first_route_json}" != "null" ]]; then
+      first_route_name="$(jq -r '.name // "-"' <<<"${first_route_json}")"
+      first_route_outbound="$(jq -r '.outbound // "direct"' <<<"${first_route_json}")"
+      first_route_priority="$(jq -r '(.priority // 0) | tostring' <<<"${first_route_json}")"
+      outbound_diag="$(ps_status_outbound_diagnose_line "${first_route_outbound}")"
+      printf "  规则链路：%s -> %s（priority=%s）\n" "${runtime_inbound_tag}" "${first_route_name}" "${first_route_priority}"
+      printf "  目标出口：%s\n" "${outbound_diag}"
+    else
+      printf "  规则链路：未找到与该入站标签匹配的已启用规则（可能走默认出口）。\n"
+    fi
 
     if [[ "${port}" != "443" ]]; then
       printf "  风险提示：REALITY 当前监听端口为非 443（%s），可能影响可用性。\n" "${port}"
@@ -776,7 +852,7 @@ ps_status_traffic_section() {
   routes="$(jq -r '[.routes[]?] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
   forwardings="$(jq -r '[.forwardings[]?] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
 
-  local invalid_route_outbound invalid_route_inbound invalid_forward_binding orphan_local_inbound orphan_outbound
+  local invalid_route_outbound invalid_route_inbound invalid_forward_binding orphan_local_inbound orphan_outbound weak_auth_outbound
   invalid_route_outbound="$(jq -r '
     . as $root
     | [.routes[]? | select(([$root.outbounds[]?.tag] | index(.outbound)) == null) | .name]
@@ -815,6 +891,15 @@ ps_status_traffic_section() {
        | $ob.tag]
     | if length==0 then "无" else join("，") end
   ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+  weak_auth_outbound="$(jq -r '
+    [
+      .outbounds[]?
+      | select((.type == "socks5" or .type == "http") and .enabled != false)
+      | select((.auth.username // "") == "" or (.auth.password // "") == "")
+      | .tag
+    ]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
 
   printf -- "- 本地入口数量：%s\n" "${local_inbounds}"
   printf -- "- 公网服务入口数量：%s\n" "${public_inbounds}"
@@ -826,6 +911,7 @@ ps_status_traffic_section() {
   printf -- "- 转发链绑定失效：%s\n" "${invalid_forward_binding}"
   printf -- "- 未被引用的本地入口：%s\n" "${orphan_local_inbound}"
   printf -- "- 未被引用的上游出口：%s\n" "${orphan_outbound}"
+  printf -- "- SOCKS5/HTTP 出口鉴权缺失：%s\n" "${weak_auth_outbound}"
 }
 
 ps_status_summary() {

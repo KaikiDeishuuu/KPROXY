@@ -171,9 +171,11 @@ ps_outbound_create() {
 
   ps_log_success "上游出口已创建： ${tag}"
   printf "摘要：标签=%s | 类型=%s | 远端=%s:%s | 启用=true\n" "${tag}" "${type}" "${server:--}" "${port:--}"
+  printf "说明：上游出口仅定义“最终去向”，不会自动接收流量。\n"
+  printf "生效条件：需要有路由规则或转发链将流量指向该出口。\n"
   printf "下一步建议：\n"
-  printf -- "- 可前往“本地代理与转发”创建转发链\n"
-  printf -- "- 可前往“路由与规则”绑定该上游\n"
+  printf -- "- 可前往“本机代理入口与转发”创建入口转发链\n"
+  printf -- "- 可前往“路由规则”绑定该上游出口\n"
 }
 
 ps_outbound_edit() {

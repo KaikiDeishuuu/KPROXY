@@ -906,8 +906,8 @@ ps_action_create_local_proxy_entry() {
   inbound_info="$(jq -r '.inbounds | map(select(.public != true)) | if length==0 then "" else (sort_by(.created_at // "") | last | "标签：\(.tag) | 类型：\(.type) | 监听：\(.listen):\(.port)") end' "${PS_MANIFEST}")"
   if [[ -n "${inbound_info}" ]]; then printf "\n创建完成\n%s\n" "${inbound_info}"; fi
   ps_show_next_steps \
-    "如需链式代理，请前往“本地代理与转发”创建转发链" \
-    "如需按域名/IP 精细分流，请前往“路由与规则”创建路由规则"
+    "如需链式代理，请前往“本机代理入口与转发”创建入口转发链" \
+    "如需按域名/IP 精细分流，请前往“路由规则”创建规则"
 }
 
 ps_action_issue_cert() {
@@ -1139,17 +1139,17 @@ ps_menu_service_management() {
 
 ps_menu_local_proxy_forward() {
   while true; do
-    ps_ui_menu_select_with_hint "本地代理与转发" "创建本地入口与转发链，让流量进入你定义的上游出口。" "返回" "请选择" \
-      "查看本地代理入口" \
-      "创建本地代理入口（推荐）" \
-      "编辑本地代理入口" \
-      "删除本地代理入口" \
-      "创建转发链（推荐）" \
-      "查看转发链" \
-      "编辑转发链" \
-      "启用/禁用转发链" \
-      "删除转发链" \
-      "查看绑定诊断"
+    ps_ui_menu_select_with_hint "本机代理入口与转发" "入口层：给本机程序提供 SOCKS5/HTTP/Mixed 入口（127.0.0.1:端口），再绑定到出口。" "返回" "请选择" \
+      "查看本机代理入口" \
+      "创建本机代理入口（推荐）" \
+      "编辑本机代理入口" \
+      "删除本机代理入口" \
+      "创建入口转发链（推荐）" \
+      "查看入口转发链" \
+      "编辑入口转发链" \
+      "启用/禁用入口转发链" \
+      "删除入口转发链" \
+      "查看入口->规则->出口诊断"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_inbound_list_local_only ;;
@@ -1170,12 +1170,12 @@ ps_menu_local_proxy_forward() {
 
 ps_menu_upstream_outbound() {
   while true; do
-    ps_ui_menu_select_with_hint "上游代理与出口" "管理 direct/block/dns 及各类远端上游代理。" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "上游代理出口" "出口层：定义流量最终去向（direct/block/dns 或远端 socks5/http/vless/shadowsocks）。" "返回" "请选择" \
       "查看上游出口" \
       "创建上游出口" \
       "编辑上游出口" \
       "删除上游出口" \
-      "查看绑定诊断"
+      "查看入口->规则->出口诊断"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_outbound_list ;;
@@ -1191,7 +1191,7 @@ ps_menu_upstream_outbound() {
 
 ps_menu_route_rules() {
   while true; do
-    ps_ui_menu_select_with_hint "路由与规则" "按入口/域名/IP/网络绑定流量到指定上游出口。" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "路由规则" "规则层：按入口标签/域名/IP/CIDR/网络匹配流量，并分配到指定上游出口。" "返回" "请选择" \
       "查看路由规则" \
       "创建路由规则" \
       "编辑路由规则" \
@@ -1567,11 +1567,11 @@ main() {
   fi
 
   while true; do
-    ps_ui_menu_select_with_hint "主菜单" "推荐流程：创建服务 -> 创建本地入口 -> 创建转发链/路由 -> 导出并诊断。" "退出" "请选择" \
+    ps_ui_menu_select_with_hint "主菜单" "流量模型：入口 -> 规则 -> 出口。推荐流程：创建服务 -> 本机入口 -> 路由规则 -> 上游出口 -> 诊断。" "退出" "请选择" \
       "创建与管理服务" \
-      "本地代理与转发" \
-      "上游代理与出口" \
-      "路由与规则" \
+      "本机代理入口与转发" \
+      "上游代理出口" \
+      "路由规则" \
       "证书与域名" \
       "订阅与导出" \
       "运行状态与诊断" \

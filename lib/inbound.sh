@@ -170,9 +170,11 @@ ps_inbound_create_local() {
 
   ps_log_success "本地代理入口已创建： ${tag}"
   printf "摘要：标签=%s | 类型=%s | 监听=%s:%s | 启用=true\n" "${tag}" "${inbound_type}" "${listen}" "${port}"
+  printf "使用方式：本机程序可连接 %s:%s 使用该入口。\n" "${listen}" "${port}"
+  printf "流量去向：由“路由规则”决定最终使用哪个上游出口。\n"
   printf "下一步建议：\n"
-  printf -- "- 可前往“本地代理与转发”创建转发链并绑定此入口\n"
-  printf -- "- 可前往“路由与规则”添加按入口标签匹配规则\n"
+  printf -- "- 可前往“本机代理入口与转发”创建入口转发链并绑定此入口\n"
+  printf -- "- 可前往“路由规则”添加按入口标签匹配规则\n"
 }
 
 ps_inbound_edit() {

@@ -344,8 +344,9 @@ ps_forward_create() {
 
   ps_log_success "转发链已创建： ${name}"
   printf "摘要：名称=%s | 本地入口=%s:%s | 上游=%s | 规则=%s | 启用=true\n" "${name}" "${listen}" "${listen_port}" "${outbound_tag}" "${route_name}"
+  printf "流量路径：入口（%s） -> 规则（%s） -> 出口（%s）。\n" "${inbound_tag}" "${route_name}" "${outbound_tag}"
   printf "下一步建议：\n"
-  printf -- "- 可前往“路由与规则”细化域名/IP 匹配条件\n"
+  printf -- "- 可前往“路由规则”细化域名/IP 匹配条件\n"
   printf -- "- 可前往“运行状态与诊断”检查监听与应用状态\n"
 }
 
