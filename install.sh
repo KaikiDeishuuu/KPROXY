@@ -519,6 +519,88 @@ ps_show_next_steps() {
   done
 }
 
+ps_service_stack_engine() {
+  local stack_id="${1:-}"
+  [[ -n "${stack_id}" ]] || return 1
+  jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .engine // "xray"' "${PS_MANIFEST}"
+}
+
+ps_service_ensure_engine_binary() {
+  local engine="${1:-xray}"
+  case "${engine}" in
+    xray)
+      if [[ -x "$(ps_engine_binary xray)" ]]; then
+        return 0
+      fi
+      ps_ui_info "检测到 xray-core 尚未安装，正在安装 kprxy 私有二进制..."
+      ps_xray_install_upgrade || {
+        ps_ui_warn "xray-core 自动安装失败，请稍后在“核心与运行控制”中重试。"
+        return 1
+      }
+      ;;
+    singbox)
+      if [[ -x "$(ps_engine_binary singbox)" ]]; then
+        return 0
+      fi
+      ps_ui_info "检测到 sing-box 尚未安装，正在安装 kprxy 私有二进制..."
+      ps_singbox_install_upgrade || {
+        ps_ui_warn "sing-box 自动安装失败，请稍后在“核心与运行控制”中重试。"
+        return 1
+      }
+      ;;
+    *)
+      ps_ui_warn "未知引擎：${engine}，跳过自动安装。"
+      return 1
+      ;;
+  esac
+}
+
+ps_service_try_start_engine() {
+  local engine="${1:-xray}"
+  local service label
+  service="$(ps_engine_service_name "${engine}")"
+  label="Xray"
+  [[ "${engine}" == "singbox" ]] && label="sing-box"
+
+  if ! ps_systemd_is_available; then
+    ps_ui_warn "未检测到 systemd，已完成配置渲染，请手动启动 ${label}。"
+    return 1
+  fi
+  if ! ps_is_root; then
+    ps_ui_warn "当前非 root，已完成配置渲染，请手动启动 ${label} 服务。"
+    return 1
+  fi
+
+  ps_systemd_install_units || {
+    ps_ui_warn "systemd 单元安装失败，请在“核心与运行控制”中检查。"
+    return 1
+  }
+
+  if ps_systemd_service_action restart "${service}"; then
+    ps_log_success "${label} 服务已自动启动：${service}.service"
+    return 0
+  fi
+
+  ps_ui_warn "${label} 服务自动启动失败，请在“核心与运行控制”中检查。"
+  return 1
+}
+
+ps_service_finalize_runtime() {
+  local stack_id="${1:-}"
+  local engine
+  engine="$(ps_service_stack_engine "${stack_id}")"
+  [[ -n "${engine}" ]] || engine="xray"
+
+  ps_service_ensure_engine_binary "${engine}" || return 1
+
+  if ! ps_render_all; then
+    ps_ui_warn "配置渲染存在告警，请前往“运行状态与诊断”查看详情。"
+  fi
+
+  ps_service_try_start_engine "${engine}" || return 1
+  return 0
+}
+
 ps_service_create_bind_public_inbound() {
   local stack_id="${1:-}"
   local stack_protocol="${2:-}"
@@ -582,6 +664,7 @@ ps_service_wizard() {
   stack_port="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .port // 0' "${PS_MANIFEST}")"
 
   ps_service_create_bind_public_inbound "${new_stack_id}" "${stack_protocol}" "${stack_port}" || true
+  ps_service_finalize_runtime "${new_stack_id}" || true
 }
 
 ps_action_create_service() {

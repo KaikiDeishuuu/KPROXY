@@ -195,6 +195,11 @@ ps_status_engine_section() {
     fi
 
     printf "  可执行文件：%s\n" "${bin}"
+    if [[ -x "${bin}" ]]; then
+      printf "  二进制安装：是\n"
+    else
+      printf "  二进制安装：否\n"
+    fi
     printf "  配置路径：%s\n" "${cfg}"
     printf "  服务名：%s\n" "${service}.service"
   done
