@@ -309,6 +309,7 @@ ps_render_xray_config() {
     validate_log="$(mktemp --suffix=.log)"
     if ! "${xray_bin}" run -test -c "${candidate}" >"${validate_log}" 2>&1; then
       validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
+      validate_message="$(ps_strip_ansi "${validate_message}")"
       [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
       ps_log_error "Xray 配置校验失败，已保留旧配置。原因：${validate_message}"
       ps_render_record_engine_status xray false "${validate_message}"
@@ -575,6 +576,7 @@ ps_render_singbox_config() {
     validate_log="$(mktemp --suffix=.log)"
     if ! "${singbox_bin}" check -c "${candidate}" >"${validate_log}" 2>&1; then
       validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
+      validate_message="$(ps_strip_ansi "${validate_message}")"
       [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
       ps_log_error "sing-box 配置校验失败，已保留旧配置。原因：${validate_message}"
       ps_render_record_engine_status singbox false "${validate_message}"

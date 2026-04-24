@@ -115,6 +115,11 @@ ps_confirm() {
   [[ "${answer}" =~ ^[Yy]$ ]]
 }
 
+ps_strip_ansi() {
+  local input="${1:-}"
+  printf '%s' "${input}" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
+}
+
 ps_request_session_termination() {
   local reason="${1:-}"
   PS_SESSION_TERMINATE_AFTER_ACTION="1"
