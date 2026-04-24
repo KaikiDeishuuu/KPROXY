@@ -17,16 +17,36 @@ ps_systemd_is_available() {
 ps_systemd_render_unit() {
   local template="${1}"
   local target="${2}"
-  local xray_bin singbox_bin
-  xray_bin="$(command -v xray 2>/dev/null || printf "/usr/local/bin/xray")"
-  singbox_bin="$(command -v sing-box 2>/dev/null || printf "/usr/bin/sing-box")"
+  local xray_bin singbox_bin xray_cfg singbox_cfg
+  xray_bin="$(ps_engine_binary xray)"
+  singbox_bin="$(ps_engine_binary singbox)"
+  xray_cfg="$(ps_engine_config_path xray)"
+  singbox_cfg="$(ps_engine_config_path singbox)"
 
   sed \
     -e "s|{{XRAY_BIN}}|${xray_bin}|g" \
-    -e "s|{{XRAY_CONFIG}}|${PS_XRAY_CONFIG}|g" \
+    -e "s|{{XRAY_CONFIG}}|${xray_cfg}|g" \
     -e "s|{{SINGBOX_BIN}}|${singbox_bin}|g" \
-    -e "s|{{SINGBOX_CONFIG}}|${PS_SINGBOX_CONFIG}|g" \
+    -e "s|{{SINGBOX_CONFIG}}|${singbox_cfg}|g" \
     "${template}" >"${target}"
+}
+
+ps_systemd_service_exists() {
+  local service="${1}"
+  ps_systemd_is_available || return 1
+  systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "${service}.service"
+}
+
+ps_systemd_active_state() {
+  local service="${1}"
+  ps_systemd_is_available || { printf "unknown"; return 1; }
+  systemctl is-active "${service}" 2>/dev/null || printf "inactive"
+}
+
+ps_systemd_enabled_state() {
+  local service="${1}"
+  ps_systemd_is_available || { printf "unknown"; return 1; }
+  systemctl is-enabled "${service}" 2>/dev/null || printf "disabled"
 }
 
 ps_systemd_install_units() {

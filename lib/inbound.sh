@@ -167,6 +167,14 @@ ps_inbound_edit() {
     ps_log_error "端口无效"
     return 1
   fi
+  if [[ -n "${port}" ]]; then
+    local current_port
+    current_port="$(jq -r --arg tag "${tag}" '.inbounds[] | select(.tag == $tag) | .port // 0' "${PS_MANIFEST}")"
+    if [[ "${port}" != "${current_port}" ]] && ps_port_is_in_use "${port}"; then
+      ps_log_error "端口冲突：${port} 已被占用或已登记。"
+      return 1
+    fi
+  fi
 
   local jq_filter='.inbounds |= map(if .tag == $tag then . else . end)'
 

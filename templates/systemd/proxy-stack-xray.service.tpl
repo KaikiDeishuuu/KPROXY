@@ -1,5 +1,5 @@
 [Unit]
-Description=Proxy Stack Xray Service
+Description=kprxy Xray Service
 After=network-online.target
 Wants=network-online.target
 

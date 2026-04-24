@@ -1,274 +1,108 @@
-# Proxy Stack（中文说明为主）
+# kprxy（中文优先）
 
-面向 Linux 服务器的模块化 Bash 代理维护框架，强调**可长期维护**、**状态可追踪**、**导出可复用**，适合个人/小规模自建场景。
+`kprxy` 是一个面向 Linux 的模块化 Bash 代理维护工具。设计目标：
 
-> 说明：本文档以中文为主，安装命令刻意保持最简，仓库覆盖参数仅作为高级选项。
+- 默认隔离运行
+- 显式复用资源
+- 自动检测冲突
+- 与 3x-ui 等现有项目安全共存
 
-## 1. 项目简介
+## 核心特性
 
-Proxy 协议栈 通过 `install.sh`（主入口）与 `forward.sh`（转发入口）提供交互式菜单，将常见代理维护流程拆分到 `lib/*.sh` 模块。核心状态由 `state/manifest.json` 持久化管理，导出文件按时间戳写入 `output/`，避免覆盖旧结果。
+- 双引擎：Xray、sing-box
+- 协议栈 / 入站 / 出站 / 路由 / 转发 / 证书 / 订阅导出
+- 统一状态检查：`kprxy status`
+- 诊断菜单与导出诊断包
+- 证书状态与续期任务检测
 
-## 2. 功能特性
+## 安装与启动
 
-- 双引擎支持：`xray-core`、`sing-box`
-- 分层协议栈预设（VLESS / Shadowsocks 2022）
-- 入站、出站、路由、转发、证书、诊断、备份恢复
-- 订阅/导出能力：
-  - 分享链接（share links）
-  - Base64 订阅
-  - Clash Meta 客户端配置
-  - Xray 客户端配置
-  - sing-box 客户端配置
-  - 初始化规则包（首次导入友好）
-  - 客户端配置 + 初始化规则包（组合导出）
-  - 本地代理路由模板导出
-- 输出目录使用时间戳子目录（保守覆盖策略）
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
+kprxy
+```
 
-## 3. 支持的协议栈
+更新：
 
-当前预设包括（以菜单与代码实现为准）：
+```bash
+kprxy update
+```
 
-- VLESS-Vision-TLS
-- VLESS-Vision-uTLS-REALITY
-- VLESS-gRPC-uTLS-REALITY
-- VLESS-Reality-XHTTP
-- Shadowsocks 2022（可选 TLS）
+## 运行状态命令
 
-## 4. 目录结构
+```bash
+kprxy status
+kprxy status summary
+kprxy status engine
+kprxy status cert
+kprxy status conflict
+```
+
+状态输出包含：
+
+- 运行状态：Xray / sing-box 进程、PID、是否由 systemd 托管、服务名、二进制路径、配置路径
+- 端口监听：协议栈端口、本地入站端口、转发监听端口（并显示占用进程）
+- 配置状态：配置文件是否存在、路径、最后修改时间、最近渲染状态、当前校验结果
+- systemd 状态：active/inactive/failed、enabled/disabled
+- 证书状态：域名、fullchain/key 是否存在、issuer/subject/notBefore/notAfter、剩余天数、自动续费状态、续费任务是否存在
+- 冲突检测：3x-ui 检测、其他 Xray/sing-box 实例、端口冲突、服务名冲突、配置路径隔离、证书路径复用提醒
+
+## 菜单入口
+
+主菜单 -> `日志与诊断` 提供：
+
+1. 查看完整运行状态
+2. 仅查看内核/进程状态
+3. 仅查看证书状态
+4. 仅查看冲突检测
+
+## 与 3x-ui / 其他面板的兼容策略
+
+`kprxy` 不会默认接管或重写其他面板配置，遵循以下策略：
+
+1. 二进制隔离：默认使用私有引擎路径（如 `/opt/kprxy/bin/*`）
+2. 配置隔离：默认使用私有配置路径（如 `/opt/kprxy/runtime/*`）
+3. systemd 隔离：使用 `kprxy-xray.service` / `kprxy-singbox.service`
+4. 端口冲突预防：创建监听端口前检查 manifest 与当前监听状态
+5. 证书隔离：默认使用 `/opt/kprxy/certs/<domain>/`
+6. 显式复用：仅在用户明确选择时复用外部证书路径
+
+## 默认隔离路径（root 模式）
+
+- 项目目录：`/opt/kprxy`
+- 私有二进制：`/opt/kprxy/bin/`
+- 运行配置：`/opt/kprxy/runtime/xray/config.json`、`/opt/kprxy/runtime/sing-box/config.json`
+- 日志目录：`/opt/kprxy/runtime/log/`
+- 证书目录：`/opt/kprxy/certs/`
+- systemd 服务：`kprxy-xray`、`kprxy-singbox`
+
+非 root 默认写入：`<项目目录>/.runtime/kprxy/`
+
+## 证书管理说明
+
+证书菜单支持：
+
+- ACME 签发并安装到私有目录
+- 自定义证书接入
+  - 模式 1：复制到 kprxy 私有目录（推荐）
+  - 模式 2：显式复用外部路径（不会由 kprxy 改写）
+- 自动续期配置与测试
+
+## 目录结构（简）
 
 ```text
 .
 ├── install.sh
 ├── forward.sh
 ├── lib/
-│   ├── stack.sh
-│   ├── inbound.sh
-│   ├── outbound.sh
-│   ├── route.sh
-│   ├── subscribe.sh
-│   ├── cert.sh
-│   ├── forward.sh
-│   ├── launcher.sh
-│   ├── diagnostic.sh
-│   ├── backup.sh
-│   └── ...
 ├── templates/
-│   ├── clash/
-│   ├── xray/
-│   ├── singbox/
-│   ├── rules/
-│   └── systemd/
-├── state/
-│   └── manifest.json
+├── state/manifest.json
 ├── output/
 └── backups/
 ```
 
-## 5. 安装
+## 注意事项
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh)
-```
-
-## 6. 启动
-
-```bash
-kprxy
-```
-
-## 7. 更新
-
-```bash
-kprxy update
-```
-
-说明（简版）：
-- `kprxy update` 默认无需再传仓库参数。
-- 元数据解析顺序：显式参数 > `state/repo-meta.conf` > 内置默认值（`KaikiDeishuuu/KPROXY@main`）。
-- 查看当前元数据：`kprxy info`
-- 手动修复元数据：`kprxy config repo --gh-user <user> --gh-repo <repo> --gh-branch <branch>`
-- 如需手动修复启动命令：`kprxy repair-launcher`
-
-## 8. 卸载
-
-```bash
-sudo rm -f /usr/local/bin/kprxy
-rm -f "$HOME/.local/bin/kprxy"
-sudo rm -rf /opt/kprxy /usr/local/share/kprxy
-rm -rf "$HOME/.local/share/kprxy"
-```
-
-## 9. 高级用法（可选覆盖仓库来源）
-
-```bash
-# 自定义仓库来源安装
-bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) \
-  --gh-user <user> --gh-repo <repo> --gh-branch <branch>
-
-# 自定义仓库来源更新
-kprxy update --gh-user <user> --gh-repo <repo> --gh-branch <branch>
-```
-
-## 10. PATH 提示说明（简版）
-
-- 仅在需要时提示（例如 launcher 目录不在 PATH）。
-- 已提示过会记录标记，后续不会每次启动重复提示。
-
-## 11. 交互式菜单说明
-
-主菜单路径：
-
-- 协议栈管理
-- 入站管理
-- 出站与路由
-- 证书与域名
-- 订阅与导出
-- 日志与诊断
-- 引擎与服务
-- 备份与恢复
-
-订阅/导出子菜单（当前实现）：
-
-1. 生成分享链接
-2. 生成 Base64 订阅
-3. 导出 Clash.Meta
-4. 导出 Xray 客户端配置
-5. 导出 sing-box 客户端配置
-6. 导出初始化规则包
-7. 导出客户端配置 + 初始化规则包
-8. 导出带路由的本地代理模板
-
-## 12. 订阅与导出说明
-
-导出统一由 `lib/subscribe.sh` 负责，所有输出写入 `output/<label>-<timestamp>/`：
-
-- 分享链接：`subscriptions/all.txt`
-- Base64：`subscriptions/all.b64.txt`
-- Clash Meta：`clash/config.yaml`
-- Xray：`xray/client.json` 与 `xray/client-<stack_id>.json`
-- sing-box：`singbox/client.json` 与 `singbox/client-<stack_id>.json`
-- 规则包：`rules/*`，并镜像到 `clash/rules/*`
-- 本地路由模板：`local-proxy-routing-template.md`
-
-### 组合导出工作流
-
-选择 `导出客户端配置 + 初始化规则包` 后，会在同一目录内依次尝试导出上述各类文件；若部分步骤失败会明确提示失败步骤，不会伪装全部成功。
-
-## 13. 初始化规则配置说明
-
-初始化规则包包含：
-
-- `custom_direct.yaml`
-- `custom_proxy.yaml`
-- `custom_reject.yaml`
-- `lan.yaml`
-- `default_rules.yaml`
-- `README.md`
-
-设计理念：**保守初始化（conservative default）**。先保证可用和可解释，再逐步加规则，不鼓励一次性加过宽规则。
-
-⚠️ 注意：不建议直接使用过宽通配规则（例如 `+.microsoft.com`），容易误伤业务与更新通道。建议先按实际域名/网段逐步补充。
-
-## 14. 转发/链式代理说明
-
-转发能力是独立入口：
-
-- 安装时直接转发模式：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/KaikiDeishuuu/KPROXY/main/install.sh) --mode forward
-```
-
-- 本地安装后启动转发入口：
-
-```bash
-kprxy --mode forward
-```
-
-转发模块路径：`lib/forward.sh`。
-
-## 15. 证书与自动续费说明
-
-证书菜单提供：
-
-- 列出现有证书
-- ACME 申请
-- 手工证书安装
-- 自动续期配置
-- 续期测试
-- SNI / REALITY 参数管理
-
-对于 VLESS 相关配置，建议明确设置并校验：
-
-- `SNI`（服务名）
-- `fingerprint`（uTLS 指纹，如 `chrome`）
-
-以上参数会影响导出链接与客户端配置匹配性。
-
-## 16. 日志与诊断说明
-
-日志/诊断菜单支持：
-
-- 查看安装日志、服务日志、访问日志、错误日志
-- 调整日志级别
-- DNS 日志开关
-- 日志轮转配置
-- 导出诊断包
-- 实时 tail
-
-默认根用户模式日志目录：`/var/log/proxy-stack/`。
-
-## 17. 输出目录结构示例
-
-```text
-output/client-rules-bundle-20260101-120000/
-├── subscriptions/
-│   ├── all.txt
-│   └── all.b64.txt
-├── clash/
-│   ├── config.yaml
-│   └── rules/
-│       ├── custom_direct.yaml
-│       ├── custom_proxy.yaml
-│       ├── custom_reject.yaml
-│       ├── lan.yaml
-│       ├── default_rules.yaml
-│       └── README.md
-├── xray/
-│   ├── client.json
-│   └── client-<stack_id>.json
-├── singbox/
-│   ├── client.json
-│   └── client-<stack_id>.json
-├── rules/
-│   ├── custom_direct.yaml
-│   ├── custom_proxy.yaml
-│   ├── custom_reject.yaml
-│   ├── lan.yaml
-│   ├── default_rules.yaml
-│   └── README.md
-└── local-proxy-routing-template.md
-```
-
-## 18. 常见注意事项
-
-- 本项目依赖 `jq`，缺失时会明确报错并退出。
-- 不要伪造验证结果：无法执行的检查必须说明原因。
-- 若当前没有启用的 VLESS 栈，Xray/sing-box 客户端导出会失败（这是预期保护行为）。
-- `output/` 为历史产物目录，建议按时间定期清理。
-
-## 19. TODO / 后续规划
-
-- TODO：在具备 `shellcheck` 环境时补充标准化 lint 基线。
-- TODO：补充非 Linux / BusyBox 下 `base64` 参数差异兼容处理（当前默认 GNU `base64 -w 0`）。
-- TODO：为导出流程增加更细粒度摘要（成功/失败计数与建议修复提示）。
-
----
-
-## English Appendix (brief)
-
-- Main entry: `install.sh`
-- Forwarding entry: `forward.sh`
-- 导出菜单包含分享链接、Base64、Clash.Meta、Xray 客户端、sing-box 客户端、初始化规则包、组合导出。
-- Outputs are timestamped under `output/` to avoid blind overwrite.
-- 运行时依赖 `jq`，缺失时会作为硬错误处理并中止执行。
+- 依赖 `jq`（缺失时会中止依赖相关功能）
+- `kprxy` 以“共存优先”为原则，不会默认覆盖其他面板资源
+- 若检测到现有 3x-ui 或其他实例，会给出冲突/共存提示

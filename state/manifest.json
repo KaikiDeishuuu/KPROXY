@@ -1,6 +1,6 @@
 {
   "meta": {
-    "project": "proxy-stack",
+    "project": "kprxy",
     "version": "0.1.0",
     "schema_version": 1,
     "created_at": "",
@@ -10,16 +10,16 @@
     "xray": {
       "installed": false,
       "version": "",
-      "binary": "xray",
-      "service": "proxy-stack-xray",
-      "config_path": "/etc/proxy-stack/xray.json"
+      "binary": "/opt/kprxy/bin/xray-linux-amd64",
+      "service": "kprxy-xray",
+      "config_path": "/opt/kprxy/runtime/xray/config.json"
     },
     "singbox": {
       "installed": false,
       "version": "",
-      "binary": "sing-box",
-      "service": "proxy-stack-singbox",
-      "config_path": "/etc/proxy-stack/singbox.json"
+      "binary": "/opt/kprxy/bin/sing-box",
+      "service": "kprxy-singbox",
+      "config_path": "/opt/kprxy/runtime/sing-box/config.json"
     }
   },
   "stacks": [],
@@ -57,10 +57,10 @@
   "forwardings": [],
   "certificates": {},
   "logs": {
-    "install_log": "/var/log/proxy-stack/install.log",
-    "xray_access": "/var/log/proxy-stack/xray-access.log",
-    "xray_error": "/var/log/proxy-stack/xray-error.log",
-    "singbox_log": "/var/log/proxy-stack/singbox.log",
+    "install_log": "/opt/kprxy/runtime/log/install.log",
+    "xray_access": "/opt/kprxy/runtime/log/xray-access.log",
+    "xray_error": "/opt/kprxy/runtime/log/xray-error.log",
+    "singbox_log": "/opt/kprxy/runtime/log/singbox.log",
     "level": "warning",
     "dns_log": false,
     "mask_address": "quarter"
@@ -69,5 +69,19 @@
     "output_dir": "./output",
     "last_generated_at": "",
     "items": []
+  },
+  "status": {
+    "render": {
+      "xray": {
+        "ok": false,
+        "message": "",
+        "checked_at": ""
+      },
+      "singbox": {
+        "ok": false,
+        "message": "",
+        "checked_at": ""
+      }
+    }
   }
 }

@@ -43,6 +43,7 @@ Proxy 协议栈 安装器/启动器
   update                     同步最新脚本/模板到当前安装目录
   export                     一键导出：客户端配置 + 初始化规则包
   doctor                     执行依赖预检
+  status                     查看运行状态（summary/engine/cert/conflict）
   repair-launcher            显式修复/更新 kprxy 启动命令
   logs                       查看安装日志
   info                       显示启动器/安装元数据
@@ -313,6 +314,7 @@ ps_bootstrap_sync_repo() {
     "install.sh"
     "forward.sh"
     "lib/common.sh"
+    "lib/status.sh"
     "lib/launcher.sh"
     "templates/xray/base.json.tpl"
     "templates/singbox/base.json.tpl"
@@ -331,7 +333,7 @@ ps_bootstrap_sync_repo() {
   mkdir -p "${PS_BOOTSTRAP_INSTALL_DIR}"
 
   if [[ -f "${PS_BOOTSTRAP_INSTALL_DIR}/lib/common.sh" && "${PS_REMOTE_UPGRADE}" -eq 0 ]]; then
-    ps_bootstrap_error "安装路径已存在 proxy-stack 项目： ${PS_BOOTSTRAP_INSTALL_DIR}"
+    ps_bootstrap_error "安装路径已存在 kprxy 项目： ${PS_BOOTSTRAP_INSTALL_DIR}"
     ps_bootstrap_error "请使用 --upgrade 更新已有安装。"
     return 1
   fi
@@ -476,6 +478,8 @@ source "${SCRIPT_DIR}/lib/systemd.sh"
 source "${SCRIPT_DIR}/lib/diagnostic.sh"
 # shellcheck source=lib/backup.sh
 source "${SCRIPT_DIR}/lib/backup.sh"
+# shellcheck source=lib/status.sh
+source "${SCRIPT_DIR}/lib/status.sh"
 
 ps_run_action() {
   local action="${1}"
@@ -704,6 +708,10 @@ ps_menu_subscribe_export() {
 ps_menu_logs_diagnostics() {
   while true; do
     ps_ui_menu_select "日志与诊断" "返回" "请选择" \
+      "查看完整运行状态" \
+      "仅查看内核/进程状态" \
+      "仅查看证书状态" \
+      "仅查看冲突检测" \
       "查看安装日志" \
       "查看 Xray 服务日志" \
       "查看 sing-box 服务日志" \
@@ -716,16 +724,20 @@ ps_menu_logs_diagnostics() {
       "实时跟踪日志"
 
     case "${PS_UI_LAST_CHOICE}" in
-      1) ps_run_action ps_diag_view_install_log ;;
-      2) ps_run_action ps_diag_view_xray_service_log ;;
-      3) ps_run_action ps_diag_view_singbox_service_log ;;
-      4) ps_run_action ps_diag_view_access_log ;;
-      5) ps_run_action ps_diag_view_error_log ;;
-      6) ps_run_action ps_diag_change_log_level ;;
-      7) ps_run_action ps_diag_toggle_dns_logging ;;
-      8) ps_run_action ps_diag_configure_log_rotation ;;
-      9) ps_run_action ps_diag_export_bundle ;;
-      10) ps_run_action ps_diag_tail_logs ;;
+      1) ps_run_action ps_status_command summary ;;
+      2) ps_run_action ps_status_command engine ;;
+      3) ps_run_action ps_status_command cert ;;
+      4) ps_run_action ps_status_command conflict ;;
+      5) ps_run_action ps_diag_view_install_log ;;
+      6) ps_run_action ps_diag_view_xray_service_log ;;
+      7) ps_run_action ps_diag_view_singbox_service_log ;;
+      8) ps_run_action ps_diag_view_access_log ;;
+      9) ps_run_action ps_diag_view_error_log ;;
+      10) ps_run_action ps_diag_change_log_level ;;
+      11) ps_run_action ps_diag_toggle_dns_logging ;;
+      12) ps_run_action ps_diag_configure_log_rotation ;;
+      13) ps_run_action ps_diag_export_bundle ;;
+      14) ps_run_action ps_diag_tail_logs ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -810,6 +822,11 @@ ps_handle_subcommand() {
     doctor)
       ps_preflight_checks
       ;;
+    status)
+      ps_preflight_checks || return $?
+      ps_init_manifest
+      ps_status_command "${1:-summary}"
+      ;;
     repair-launcher)
       ps_repair_launcher
       ;;
@@ -831,7 +848,7 @@ ps_handle_subcommand() {
       ;;
     *)
       ps_ui_error "不支持的子命令： ${subcommand}"
-      printf '%s\n' "支持的子命令：update、export、doctor、logs、info、config repo、repair-launcher"
+      printf '%s\n' "支持的子命令：update、export、doctor、status、logs、info、config repo、repair-launcher"
       return 2
       ;;
   esac

@@ -90,7 +90,7 @@ ps_outbound_create() {
   local server="" port="0" username="" password="" network="tcp" sni="" fingerprint="" uuid="" method="" members_json='[]'
   if [[ "${type}" =~ ^(socks5|http|vless|shadowsocks)$ ]]; then
     server="$(ps_prompt_required "远端服务器")"
-    port="$(ps_prompt_for_port "远端端口（输入端口，回车随机）")"
+    port="$(ps_prompt_required "远端端口")"
     if ! ps_validate_port "${port}"; then
       ps_log_error "端口无效"
       return 1

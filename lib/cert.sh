@@ -121,7 +121,7 @@ ps_cert_issue_acme() {
 
 ps_cert_install_custom() {
   ps_print_header "安装自定义证书"
-  local domain fullchain_path key_path
+  local domain fullchain_path key_path mode_choice
   domain="$(ps_prompt_required "域名")"
   fullchain_path="$(ps_prompt_required "Fullchain 路径")"
   key_path="$(ps_prompt_required "私钥路径")"
@@ -131,16 +131,38 @@ ps_cert_install_custom() {
     return 1
   fi
 
-  local cert_dir="${PS_CERT_DIR}/${domain}"
-  mkdir -p "${cert_dir}"
-  cp -a "${fullchain_path}" "${cert_dir}/fullchain.pem"
-  cp -a "${key_path}" "${cert_dir}/key.pem"
+  printf "1) 复制到 kprxy 私有目录（推荐）\n"
+  printf "2) 显式复用外部路径（仅在你确认可共用时使用）\n"
+  mode_choice="$(ps_prompt_required "接入模式编号")"
+
+  local target_fullchain target_key issuer
+  case "${mode_choice}" in
+    1)
+      local cert_dir="${PS_CERT_DIR}/${domain}"
+      mkdir -p "${cert_dir}"
+      cp -a "${fullchain_path}" "${cert_dir}/fullchain.pem"
+      cp -a "${key_path}" "${cert_dir}/key.pem"
+      target_fullchain="${cert_dir}/fullchain.pem"
+      target_key="${cert_dir}/key.pem"
+      issuer="manual"
+      ;;
+    2)
+      target_fullchain="${fullchain_path}"
+      target_key="${key_path}"
+      issuer="manual-external-reuse"
+      ps_log_warn "已选择显式复用外部证书路径，kprxy 不会改写原证书文件。"
+      ;;
+    *)
+      ps_log_error "接入模式无效"
+      return 1
+      ;;
+  esac
 
   ps_manifest_update \
     --arg domain "${domain}" \
-    --arg fullchain "${cert_dir}/fullchain.pem" \
-    --arg key "${cert_dir}/key.pem" \
-    --arg issuer "manual" \
+    --arg fullchain "${target_fullchain}" \
+    --arg key "${target_key}" \
+    --arg issuer "${issuer}" \
     --arg renew_mode "manual" \
     --argjson renew_enabled false \
     --arg updated "$(ps_now_iso)" \
@@ -173,10 +195,10 @@ ps_cert_configure_auto_renew() {
   if [[ "${enabled}" == "true" ]]; then
     local cron_line="17 3 * * * root ${HOME}/.acme.sh/acme.sh --cron --home ${HOME}/.acme.sh >/dev/null 2>&1 && (systemctl reload ${PS_XRAY_SERVICE} ${PS_SINGBOX_SERVICE} >/dev/null 2>&1 || true)"
     if ps_is_root; then
-      printf "%s\n" "${cron_line}" > /etc/cron.d/proxy-stack-acme
-      ps_log_info "续期 cron 已写入： /etc/cron.d/proxy-stack-acme"
+      printf "%s\n" "${cron_line}" > /etc/cron.d/kprxy-acme
+      ps_log_info "续期 cron 已写入： /etc/cron.d/kprxy-acme"
     else
-      local renew_script="${PS_ROOT_DIR}/.runtime/renew-acme.sh"
+      local renew_script="${PS_ROOT_DIR}/.runtime/renew-kprxy-acme.sh"
       mkdir -p "$(dirname "${renew_script}")"
       cat >"${renew_script}" <<'SCRIPT'
 #!/usr/bin/env bash

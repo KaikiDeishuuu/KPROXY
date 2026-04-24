@@ -102,7 +102,11 @@ ps_forward_create_new_outbound_json() {
 
   if [[ "${type}" =~ ^(socks5|http|vless|shadowsocks)$ ]]; then
     server="$(ps_prompt_required "目标服务器")"
-    port="$(ps_prompt_for_port "目标端口（输入端口，回车随机）")"
+    port="$(ps_prompt_required "目标端口")"
+    if ! ps_validate_port "${port}"; then
+      ps_log_error "目标端口无效"
+      return 1
+    fi
   fi
 
   case "${type}" in

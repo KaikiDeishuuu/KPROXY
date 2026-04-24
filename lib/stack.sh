@@ -283,6 +283,12 @@ ps_stack_edit() {
       ps_log_error "端口无效"
       return 1
     fi
+    local current_port
+    current_port="$(jq -r --arg id "${stack_id}" '.stacks[] | select(.stack_id == $id) | .port // 0' "${PS_MANIFEST}")"
+    if [[ "${port}" != "${current_port}" ]] && ps_port_is_in_use "${port}"; then
+      ps_log_error "端口冲突：${port} 已被占用或已登记。"
+      return 1
+    fi
     jq_filter+=' | .stacks |= map(if .stack_id == $id then .port = ($port|tonumber) else . end)'
   fi
   if [[ -n "${engine}" ]]; then

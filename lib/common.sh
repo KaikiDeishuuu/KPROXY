@@ -12,22 +12,36 @@ PS_STATE_DIR="${PS_ROOT_DIR}/state"
 PS_OUTPUT_DIR="${PS_ROOT_DIR}/output"
 PS_BACKUP_DIR="${PS_ROOT_DIR}/backups"
 PS_MANIFEST="${PS_STATE_DIR}/manifest.json"
+PS_PROJECT_NAME="kprxy"
 
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-  PS_ETC_DIR="/etc/proxy-stack"
-  PS_LOG_DIR="/var/log/proxy-stack"
+  PS_HOME_DIR="/opt/kprxy"
+  PS_RUNTIME_DIR="${PS_HOME_DIR}/runtime"
+  PS_ETC_DIR="${PS_RUNTIME_DIR}"
+  PS_LOG_DIR="${PS_RUNTIME_DIR}/log"
   PS_SYSTEMD_DIR="/etc/systemd/system"
 else
-  PS_ETC_DIR="${PS_ROOT_DIR}/.runtime/etc"
-  PS_LOG_DIR="${PS_ROOT_DIR}/.runtime/log"
+  PS_HOME_DIR="${PS_ROOT_DIR}/.runtime/kprxy"
+  PS_RUNTIME_DIR="${PS_HOME_DIR}/runtime"
+  PS_ETC_DIR="${PS_RUNTIME_DIR}"
+  PS_LOG_DIR="${PS_RUNTIME_DIR}/log"
   PS_SYSTEMD_DIR="${PS_ROOT_DIR}/.runtime/systemd"
 fi
 
-PS_CERT_DIR="${PS_ETC_DIR}/certs"
-PS_XRAY_CONFIG="${PS_ETC_DIR}/xray.json"
-PS_SINGBOX_CONFIG="${PS_ETC_DIR}/singbox.json"
-PS_XRAY_SERVICE="proxy-stack-xray"
-PS_SINGBOX_SERVICE="proxy-stack-singbox"
+PS_BIN_DIR="${PS_HOME_DIR}/bin"
+PS_ARCH="$(uname -m 2>/dev/null || printf "amd64")"
+PS_XRAY_ARCH_SUFFIX="amd64"
+case "${PS_ARCH}" in
+  x86_64|amd64) PS_XRAY_ARCH_SUFFIX="amd64" ;;
+  aarch64|arm64) PS_XRAY_ARCH_SUFFIX="arm64" ;;
+esac
+PS_CERT_DIR="${PS_HOME_DIR}/certs"
+PS_XRAY_CONFIG="${PS_RUNTIME_DIR}/xray/config.json"
+PS_SINGBOX_CONFIG="${PS_RUNTIME_DIR}/sing-box/config.json"
+PS_XRAY_SERVICE="kprxy-xray"
+PS_SINGBOX_SERVICE="kprxy-singbox"
+PS_XRAY_BIN="${PS_BIN_DIR}/xray-linux-${PS_XRAY_ARCH_SUFFIX}"
+PS_SINGBOX_BIN="${PS_BIN_DIR}/sing-box"
 PS_INSTALL_LOG="${PS_LOG_DIR}/install.log"
 PS_DEBUG="${PS_DEBUG:-0}"
 
@@ -126,7 +140,7 @@ ps_require_jq() {
 }
 
 ps_prepare_runtime_dirs() {
-  mkdir -p "${PS_STATE_DIR}" "${PS_OUTPUT_DIR}" "${PS_BACKUP_DIR}" "${PS_ETC_DIR}" "${PS_LOG_DIR}" "${PS_CERT_DIR}" "${PS_SYSTEMD_DIR}"
+  mkdir -p "${PS_STATE_DIR}" "${PS_OUTPUT_DIR}" "${PS_BACKUP_DIR}" "${PS_ETC_DIR}" "${PS_LOG_DIR}" "${PS_CERT_DIR}" "${PS_SYSTEMD_DIR}" "${PS_BIN_DIR}" "$(dirname "${PS_XRAY_CONFIG}")" "$(dirname "${PS_SINGBOX_CONFIG}")"
 }
 
 ps_init_manifest() {
@@ -137,7 +151,7 @@ ps_init_manifest() {
     cat >"${PS_MANIFEST}" <<'JSON'
 {
   "meta": {
-    "project": "proxy-stack",
+    "project": "kprxy",
     "version": "0.1.0",
     "schema_version": 1,
     "created_at": "",
@@ -147,16 +161,16 @@ ps_init_manifest() {
     "xray": {
       "installed": false,
       "version": "",
-      "binary": "xray",
-      "service": "proxy-stack-xray",
-      "config_path": "/etc/proxy-stack/xray.json"
+      "binary": "/opt/kprxy/bin/xray-linux-amd64",
+      "service": "kprxy-xray",
+      "config_path": "/opt/kprxy/runtime/xray/config.json"
     },
     "singbox": {
       "installed": false,
       "version": "",
-      "binary": "sing-box",
-      "service": "proxy-stack-singbox",
-      "config_path": "/etc/proxy-stack/singbox.json"
+      "binary": "/opt/kprxy/bin/sing-box",
+      "service": "kprxy-singbox",
+      "config_path": "/opt/kprxy/runtime/sing-box/config.json"
     }
   },
   "stacks": [],
@@ -194,10 +208,10 @@ ps_init_manifest() {
   "forwardings": [],
   "certificates": {},
   "logs": {
-    "install_log": "/var/log/proxy-stack/install.log",
-    "xray_access": "/var/log/proxy-stack/xray-access.log",
-    "xray_error": "/var/log/proxy-stack/xray-error.log",
-    "singbox_log": "/var/log/proxy-stack/singbox.log",
+    "install_log": "/opt/kprxy/runtime/log/install.log",
+    "xray_access": "/opt/kprxy/runtime/log/xray-access.log",
+    "xray_error": "/opt/kprxy/runtime/log/xray-error.log",
+    "singbox_log": "/opt/kprxy/runtime/log/singbox.log",
     "level": "warning",
     "dns_log": false,
     "mask_address": "quarter"
@@ -206,6 +220,20 @@ ps_init_manifest() {
     "output_dir": "./output",
     "last_generated_at": "",
     "items": []
+  },
+  "status": {
+    "render": {
+      "xray": {
+        "ok": false,
+        "message": "",
+        "checked_at": ""
+      },
+      "singbox": {
+        "ok": false,
+        "message": "",
+        "checked_at": ""
+      }
+    }
   }
 }
 JSON
@@ -222,7 +250,77 @@ JSON
     ps_manifest_update --arg ts "$(ps_now_iso)" '.meta.created_at = $ts'
   fi
   ps_manifest_update '.forwardings = (.forwardings // [])'
+  ps_manifest_update '.status = (.status // {}) | .status.render = (.status.render // {}) | .status.render.xray = (.status.render.xray // {ok:false,message:"",checked_at:""}) | .status.render.singbox = (.status.render.singbox // {ok:false,message:"",checked_at:""})'
+  ps_manifest_update --arg install "${PS_LOG_DIR}/install.log" --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" --arg sb "${PS_LOG_DIR}/singbox.log" '.logs.install_log = $install | .logs.xray_access = $xa | .logs.xray_error = $xe | .logs.singbox_log = $sb'
+  ps_manifest_update --arg xbin "${PS_XRAY_BIN}" --arg sbin "${PS_SINGBOX_BIN}" --arg xcfg "${PS_XRAY_CONFIG}" --arg scfg "${PS_SINGBOX_CONFIG}" --arg xsvc "${PS_XRAY_SERVICE}" --arg ssvc "${PS_SINGBOX_SERVICE}" '.engines.xray.binary = $xbin | .engines.xray.config_path = $xcfg | .engines.xray.service = $xsvc | .engines.singbox.binary = $sbin | .engines.singbox.config_path = $scfg | .engines.singbox.service = $ssvc'
   ps_manifest_update --arg ts "$(ps_now_iso)" '.meta.updated_at = $ts'
+}
+
+ps_manifest_engine_field() {
+  ps_require_jq || return $?
+  local engine="${1}"
+  local field="${2}"
+  jq -r --arg e "${engine}" --arg f "${field}" '.engines[$e][$f] // empty' "${PS_MANIFEST}" 2>/dev/null
+}
+
+ps_engine_binary() {
+  local engine="${1}"
+  local fallback=""
+  case "${engine}" in
+    xray) fallback="${PS_XRAY_BIN}" ;;
+    singbox) fallback="${PS_SINGBOX_BIN}" ;;
+    *) printf ""; return 1 ;;
+  esac
+
+  if [[ -f "${PS_MANIFEST}" ]]; then
+    local v
+    v="$(ps_manifest_engine_field "${engine}" "binary" || true)"
+    if [[ -n "${v}" ]]; then
+      printf "%s" "${v}"
+      return 0
+    fi
+  fi
+  printf "%s" "${fallback}"
+}
+
+ps_engine_config_path() {
+  local engine="${1}"
+  local fallback=""
+  case "${engine}" in
+    xray) fallback="${PS_XRAY_CONFIG}" ;;
+    singbox) fallback="${PS_SINGBOX_CONFIG}" ;;
+    *) printf ""; return 1 ;;
+  esac
+
+  if [[ -f "${PS_MANIFEST}" ]]; then
+    local v
+    v="$(ps_manifest_engine_field "${engine}" "config_path" || true)"
+    if [[ -n "${v}" ]]; then
+      printf "%s" "${v}"
+      return 0
+    fi
+  fi
+  printf "%s" "${fallback}"
+}
+
+ps_engine_service_name() {
+  local engine="${1}"
+  local fallback=""
+  case "${engine}" in
+    xray) fallback="${PS_XRAY_SERVICE}" ;;
+    singbox) fallback="${PS_SINGBOX_SERVICE}" ;;
+    *) printf ""; return 1 ;;
+  esac
+
+  if [[ -f "${PS_MANIFEST}" ]]; then
+    local v
+    v="$(ps_manifest_engine_field "${engine}" "service" || true)"
+    if [[ -n "${v}" ]]; then
+      printf "%s" "${v}"
+      return 0
+    fi
+  fi
+  printf "%s" "${fallback}"
 }
 
 ps_manifest_query() {
@@ -292,13 +390,35 @@ ps_port_is_recorded_in_manifest() {
     [
       (.stacks[]?.port // empty),
       (.inbounds[]?.port // empty),
-      (.outbounds[]?.port // empty),
-      (.forwardings[]?.listen_port // empty),
-      (.forwardings[]?.target_port // empty)
+      (.forwardings[]?.listen_port // empty)
     ]
     | map(select(type == "number"))
     | index($p) != null
   ' "${PS_MANIFEST}" >/dev/null 2>&1
+}
+
+ps_port_listener_owner() {
+  local port="${1:-0}"
+  ps_validate_port "${port}" || return 1
+  if ! ps_command_exists ss; then
+    return 1
+  fi
+
+  ss -H -lntup 2>/dev/null \
+    | awk -v p="${port}" '
+      $5 ~ ("(^|[:\\]])" p "$") {
+        proc="-"
+        if (match($0, /users:\(\("([^"]+)"/, m)) {
+          proc=m[1]
+        }
+        pid="-"
+        if (match($0, /pid=([0-9]+)/, k)) {
+          pid=k[1]
+        }
+        print proc "|" pid
+        exit
+      }
+    '
 }
 
 ps_port_is_in_use() {
@@ -367,7 +487,18 @@ ps_prompt_for_port() {
     fi
 
     if ps_port_is_in_use "${input}"; then
-      printf "端口 %s 已被占用或已记录在 manifest 中，请更换。\n" "${input}" >&2
+      local owner
+      owner="$(ps_port_listener_owner "${input}" || true)"
+      if [[ -n "${owner}" ]]; then
+        IFS='|' read -r proc pid <<<"${owner}"
+        if [[ "${proc}" =~ ^(xray|sing-box|x-ui|3x-ui)$ ]]; then
+          printf "端口 %s 冲突：已被 %s（PID=%s）占用，请更换或显式复用。\n" "${input}" "${proc}" "${pid:-未知}" >&2
+          continue
+        fi
+        printf "端口 %s 已被占用（进程=%s，PID=%s），请更换。\n" "${input}" "${proc:-未知}" "${pid:-未知}" >&2
+      else
+        printf "端口 %s 已被占用或已记录在 manifest 中，请更换。\n" "${input}" >&2
+      fi
       continue
     fi
 

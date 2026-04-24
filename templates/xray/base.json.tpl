@@ -1,8 +1,8 @@
 {
   "log": {
     "loglevel": "warning",
-    "access": "/var/log/proxy-stack/xray-access.log",
-    "error": "/var/log/proxy-stack/xray-error.log",
+    "access": "/opt/kprxy/runtime/log/xray-access.log",
+    "error": "/opt/kprxy/runtime/log/xray-error.log",
     "dnsLog": false,
     "maskAddress": "quarter"
   },

@@ -10,6 +10,18 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # shellcheck source=lib/logger.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 
+ps_render_record_engine_status() {
+  local engine="${1}"
+  local ok="${2}"
+  local message="${3:-}"
+  ps_manifest_update \
+    --arg e "${engine}" \
+    --argjson ok "${ok}" \
+    --arg msg "${message}" \
+    --arg ts "$(ps_now_iso)" \
+    '.status.render[$e] = {ok:$ok, message:$msg, checked_at:$ts} | .meta.updated_at = $ts'
+}
+
 ps_render_xray_inbounds_json() {
   jq -c '
     [
@@ -268,12 +280,17 @@ ps_render_xray_config() {
   ps_print_header "渲染 Xray 配置"
   local template="${PS_TEMPLATES_DIR}/xray/base.json.tpl"
   if [[ ! -f "${template}" ]]; then
-    ps_log_error "Missing xray template: ${template}"
+    ps_log_error "缺少 Xray 模板：${template}"
+    ps_render_record_engine_status xray false "缺少模板文件"
     return 1
   fi
 
+  local config_path xray_bin
+  config_path="$(ps_engine_config_path xray)"
+  xray_bin="$(ps_engine_binary xray)"
+
   local log_json inbounds_json outbounds_json routes_json candidate
-  log_json="$(jq -c '.logs | {loglevel:(.level // "warning"),access:(.xray_access // "/var/log/proxy-stack/xray-access.log"),error:(.xray_error // "/var/log/proxy-stack/xray-error.log"),dnsLog:(.dns_log // false),maskAddress:(.mask_address // "quarter")}' "${PS_MANIFEST}")"
+  log_json="$(jq -c --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" '.logs | {loglevel:(.level // "warning"),access:(.xray_access // $xa),error:(.xray_error // $xe),dnsLog:(.dns_log // false),maskAddress:(.mask_address // "quarter")}' "${PS_MANIFEST}")"
   inbounds_json="$(ps_render_xray_inbounds_json)"
   outbounds_json="$(ps_render_xray_outbounds_json)"
   routes_json="$(ps_render_xray_routes_json)"
@@ -287,9 +304,10 @@ ps_render_xray_config() {
     '.log = $log | .inbounds = $inbounds | .outbounds = $outbounds | .routing.rules = $routes' \
     "${template}" >"${candidate}"
 
-  if ps_command_exists xray; then
-    if ! xray run -test -c "${candidate}" >/dev/null 2>&1; then
+  if [[ -x "${xray_bin}" ]]; then
+    if ! "${xray_bin}" run -test -c "${candidate}" >/dev/null 2>&1; then
       ps_log_error "Xray 配置校验失败，已保留旧配置。"
+      ps_render_record_engine_status xray false "配置校验失败"
       rm -f "${candidate}"
       return 1
     fi
@@ -297,9 +315,10 @@ ps_render_xray_config() {
     ps_log_warn "未找到 xray，已跳过 Xray 配置校验"
   fi
 
-  ps_backup_file_if_exists "${PS_XRAY_CONFIG}" "xray-config" >/dev/null || true
-  ps_atomic_replace_file "${candidate}" "${PS_XRAY_CONFIG}"
-  ps_log_success "Xray 配置已渲染：${PS_XRAY_CONFIG}"
+  ps_backup_file_if_exists "${config_path}" "xray-config" >/dev/null || true
+  ps_atomic_replace_file "${candidate}" "${config_path}"
+  ps_render_record_engine_status xray true "渲染成功"
+  ps_log_success "Xray 配置已渲染：${config_path}"
 }
 
 ps_render_singbox_inbounds_json() {
@@ -522,9 +541,14 @@ ps_render_singbox_config() {
   ps_print_header "渲染 sing-box 配置"
   local template="${PS_TEMPLATES_DIR}/singbox/base.json.tpl"
   if [[ ! -f "${template}" ]]; then
-    ps_log_error "Missing sing-box template: ${template}"
+    ps_log_error "缺少 sing-box 模板：${template}"
+    ps_render_record_engine_status singbox false "缺少模板文件"
     return 1
   fi
+
+  local config_path singbox_bin
+  config_path="$(ps_engine_config_path singbox)"
+  singbox_bin="$(ps_engine_binary singbox)"
 
   local inbounds_json outbounds_json routes_json final_tag candidate
   inbounds_json="$(ps_render_singbox_inbounds_json)"
@@ -542,9 +566,10 @@ ps_render_singbox_config() {
     '.log.level = $level | .inbounds = $inbounds | .outbounds = $outbounds | .route.rules = $routes | .route.final = $final' \
     "${template}" >"${candidate}"
 
-  if ps_command_exists sing-box; then
-    if ! sing-box check -c "${candidate}" >/dev/null 2>&1; then
+  if [[ -x "${singbox_bin}" ]]; then
+    if ! "${singbox_bin}" check -c "${candidate}" >/dev/null 2>&1; then
       ps_log_error "sing-box 配置校验失败，已保留旧配置。"
+      ps_render_record_engine_status singbox false "配置校验失败"
       rm -f "${candidate}"
       return 1
     fi
@@ -552,9 +577,10 @@ ps_render_singbox_config() {
     ps_log_warn "未找到 sing-box，已跳过配置校验"
   fi
 
-  ps_backup_file_if_exists "${PS_SINGBOX_CONFIG}" "singbox-config" >/dev/null || true
-  ps_atomic_replace_file "${candidate}" "${PS_SINGBOX_CONFIG}"
-  ps_log_success "sing-box 配置已渲染：${PS_SINGBOX_CONFIG}"
+  ps_backup_file_if_exists "${config_path}" "singbox-config" >/dev/null || true
+  ps_atomic_replace_file "${candidate}" "${config_path}"
+  ps_render_record_engine_status singbox true "渲染成功"
+  ps_log_success "sing-box 配置已渲染：${config_path}"
 }
 
 ps_render_all() {

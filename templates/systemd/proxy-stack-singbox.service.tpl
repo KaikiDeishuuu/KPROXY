@@ -1,5 +1,5 @@
 [Unit]
-Description=Proxy Stack sing-box Service
+Description=kprxy sing-box Service
 After=network-online.target
 Wants=network-online.target
 

@@ -105,13 +105,13 @@ ps_diag_configure_log_rotation() {
 }"
 
   if ps_is_root; then
-    printf "%s\n" "${config_content}" >/etc/logrotate.d/proxy-stack
-    ps_log_success "Logrotate 配置已写入： /etc/logrotate.d/proxy-stack"
+    printf "%s\n" "${config_content}" >/etc/logrotate.d/kprxy
+    ps_log_success "Logrotate 配置已写入： /etc/logrotate.d/kprxy"
   else
-    local local_file="${PS_ROOT_DIR}/.runtime/logrotate-proxy-stack.conf"
+    local local_file="${PS_ROOT_DIR}/.runtime/logrotate-kprxy.conf"
     mkdir -p "$(dirname "${local_file}")"
     printf "%s\n" "${config_content}" >"${local_file}"
-    ps_log_warn "Non-root mode, wrote local logrotate sample: ${local_file}"
+    ps_log_warn "非 root 模式：已写入本地 logrotate 样例：${local_file}"
   fi
 }
 
@@ -153,9 +153,17 @@ ps_diag_export_bundle() {
 
   {
     printf "xray: "
-    xray version 2>/dev/null | head -n 1 || printf "未安装\n"
+    if [[ -x "$(ps_engine_binary xray)" ]]; then
+      "$(ps_engine_binary xray)" version 2>/dev/null | head -n 1 || printf "未安装\n"
+    else
+      printf "未安装\n"
+    fi
     printf "sing-box: "
-    sing-box version 2>/dev/null | head -n 1 || printf "未安装\n"
+    if [[ -x "$(ps_engine_binary singbox)" ]]; then
+      "$(ps_engine_binary singbox)" version 2>/dev/null | head -n 1 || printf "未安装\n"
+    else
+      printf "未安装\n"
+    fi
   } >"${tmpdir}/engine-versions.txt"
 
   if ps_command_exists systemctl; then
