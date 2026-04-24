@@ -761,6 +761,71 @@ ps_status_conflict_section() {
   if [[ "${port_conflict}" -eq 0 ]]; then printf -- "- 未检测到端口冲突。\n"; fi
 }
 
+ps_status_traffic_section() {
+  ps_status_section "转发/路由健康"
+
+  if [[ ! -f "${PS_MANIFEST}" ]]; then
+    printf -- "- 未找到 manifest，无法检查转发/路由健康。\n"
+    return 0
+  fi
+
+  local local_inbounds public_inbounds outbounds routes forwardings
+  local_inbounds="$(jq -r '[.inbounds[]? | select(.public != true)] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+  public_inbounds="$(jq -r '[.inbounds[]? | select(.public == true)] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+  outbounds="$(jq -r '[.outbounds[]?] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+  routes="$(jq -r '[.routes[]?] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+  forwardings="$(jq -r '[.forwardings[]?] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+
+  local invalid_route_outbound invalid_route_inbound invalid_forward_binding orphan_local_inbound orphan_outbound
+  invalid_route_outbound="$(jq -r '
+    . as $root
+    | [.routes[]? | select(([$root.outbounds[]?.tag] | index(.outbound)) == null) | .name]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+  invalid_route_inbound="$(jq -r '
+    . as $root
+    | [.routes[]?
+       | select((.inbound_tag // []) | length > 0)
+       | select(any((.inbound_tag // [])[]; ([$root.inbounds[]?.tag] | index(.)) == null))
+       | .name]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+  invalid_forward_binding="$(jq -r '
+    . as $root
+    | [.forwardings[]?
+       | select(([$root.inbounds[]?.tag] | index(.inbound_tag)) == null or ([$root.outbounds[]?.tag] | index(.outbound_tag)) == null)
+       | (.name // .forward_id)]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+  orphan_local_inbound="$(jq -r '
+    . as $root
+    | [.inbounds[]?
+       | select(.public != true)
+       | select(([$root.routes[]? | (.inbound_tag // [])[]] | index(.tag)) == null and ([$root.forwardings[]? | .inbound_tag] | index(.tag)) == null)
+       | .tag]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+  orphan_outbound="$(jq -r '
+    . as $root
+    | [.outbounds[]?
+       | select((.tag != "direct") and (.tag != "block") and (.tag != "dns-out"))
+       | select(([$root.routes[]? | .outbound] | index(.tag)) == null and ([$root.forwardings[]? | .outbound_tag] | index(.tag)) == null)
+       | .tag]
+    | if length==0 then "无" else join("，") end
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '无')"
+
+  printf -- "- 本地入口数量：%s\n" "${local_inbounds}"
+  printf -- "- 公网服务入口数量：%s\n" "${public_inbounds}"
+  printf -- "- 上游出口数量：%s\n" "${outbounds}"
+  printf -- "- 路由规则数量：%s\n" "${routes}"
+  printf -- "- 转发链数量：%s\n" "${forwardings}"
+  printf -- "- 路由缺失出口引用：%s\n" "${invalid_route_outbound}"
+  printf -- "- 路由缺失入口引用：%s\n" "${invalid_route_inbound}"
+  printf -- "- 转发链绑定失效：%s\n" "${invalid_forward_binding}"
+  printf -- "- 未被引用的本地入口：%s\n" "${orphan_local_inbound}"
+  printf -- "- 未被引用的上游出口：%s\n" "${orphan_outbound}"
+}
+
 ps_status_summary() {
   ps_print_header "运行状态"
   ps_status_installation_section
@@ -769,6 +834,7 @@ ps_status_summary() {
   ps_status_config_section
   ps_status_apply_section
   ps_status_reality_section
+  ps_status_traffic_section
   ps_status_systemd_section
   ps_status_cert_section
   ps_status_conflict_section
@@ -790,6 +856,11 @@ ps_status_conflict_only() {
   ps_status_conflict_section
 }
 
+ps_status_traffic_only() {
+  ps_print_header "运行状态 - 转发/路由健康"
+  ps_status_traffic_section
+}
+
 ps_status_reality_only() {
   ps_print_header "运行状态 - VLESS-REALITY 诊断"
   ps_status_reality_section
@@ -802,10 +873,11 @@ ps_status_command() {
     cert|certs) ps_status_cert_only ;;
     engine|engines|process) ps_status_engine_only ;;
     conflict|coexist|coexistence) ps_status_conflict_only ;;
+    traffic|forward|routing) ps_status_traffic_only ;;
     reality|vless-reality) ps_status_reality_only ;;
     *)
       ps_log_error "不支持的 status 子项：${scope}"
-      printf "可用：kprxy status [summary|engine|cert|conflict|reality]\n"
+      printf "可用：kprxy status [summary|engine|cert|conflict|traffic|reality]\n"
       return 2
       ;;
   esac

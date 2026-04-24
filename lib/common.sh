@@ -167,7 +167,7 @@ ps_init_manifest() {
   "meta": {
     "project": "kprxy",
     "version": "0.1.0",
-    "schema_version": 1,
+    "schema_version": 2,
     "public_address": "",
     "created_at": "",
     "updated_at": ""
@@ -265,7 +265,31 @@ JSON
     ps_manifest_update --arg ts "$(ps_now_iso)" '.meta.created_at = $ts'
   fi
   ps_manifest_update '.meta.public_address = (.meta.public_address // "")'
+  ps_manifest_update '.meta.schema_version = 2'
   ps_manifest_update '.forwardings = (.forwardings // [])'
+  ps_manifest_update '.inbounds = (.inbounds // []) | .outbounds = (.outbounds // []) | .routes = (.routes // [])'
+  ps_manifest_update '
+    .inbounds |= map(
+      .enabled = (.enabled // true)
+      | .public = (.public // false)
+      | .stack_id = (.stack_id // "")
+    )
+    | .outbounds |= map(.enabled = (.enabled // true))
+    | .routes |= map(
+        .enabled = (.enabled // true)
+        | .inbound_tag = (.inbound_tag // [])
+        | .domain_suffix = (.domain_suffix // [])
+        | .domain_keyword = (.domain_keyword // [])
+        | .ip_cidr = (.ip_cidr // [])
+        | .network = (.network // [])
+      )
+    | .forwardings |= map(
+        .enabled = (.enabled // true)
+        | .route_name = (.route_name // "")
+        | .inbound_tag = (.inbound_tag // "")
+        | .outbound_tag = (.outbound_tag // "direct")
+      )
+  '
   ps_manifest_update '
     .status = (.status // {})
     | .status.render = (.status.render // {})

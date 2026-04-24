@@ -44,7 +44,7 @@ kprxy 安装器/控制台
   service-wizard             一键搭建（自动完成模板+入口绑定）
   export                     一键导出：客户端配置 + 初始化规则包（推荐给普通用户）
   doctor                     执行依赖预检
-  status                     查看运行状态（summary/engine/cert/conflict/reality）
+  status                     查看运行状态（summary/engine/cert/conflict/traffic/reality）
   uninstall                  卸载 kprxy（默认保留数据，可选 --purge / --keep-data / --yes）
   cleanup                    清理临时与生成产物（可选 --yes）
   reset                      重置项目状态与配置（保留框架安装，可选 --yes）
@@ -861,8 +861,8 @@ ps_action_create_local_proxy_entry() {
   inbound_info="$(jq -r '.inbounds | map(select(.public != true)) | if length==0 then "" else (sort_by(.created_at // "") | last | "标签：\(.tag) | 类型：\(.type) | 监听：\(.listen):\(.port)") end' "${PS_MANIFEST}")"
   if [[ -n "${inbound_info}" ]]; then printf "\n创建完成\n%s\n" "${inbound_info}"; fi
   ps_show_next_steps \
-    "如需链式代理，请前往“本地代理与转发”创建转发规则" \
-    "如需导出客户端配置，请前往“订阅与导出”"
+    "如需链式代理，请前往“本地代理与转发”创建转发链" \
+    "如需按域名/IP 精细分流，请前往“路由与规则”创建路由规则"
 }
 
 ps_action_issue_cert() {
@@ -961,17 +961,23 @@ ps_menu_uninstall_engines() {
 
 ps_menu_forwarding() {
   while true; do
-    ps_ui_menu_select "转发管理" "返回" "请选择" \
-      "查看转发条目" \
-      "创建转发条目" \
-      "删除转发条目" \
+    ps_ui_menu_select_with_hint "高级绑定/编排" "面向高级用户：手动维护转发链与路由绑定关系。" "返回" "请选择" \
+      "查看转发链" \
+      "创建转发链" \
+      "编辑转发链" \
+      "启用/禁用转发链" \
+      "删除转发链" \
+      "查看绑定诊断" \
       "测试路由匹配"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_run_action ps_forward_list ;;
       2) ps_run_action ps_forward_create ;;
-      3) ps_run_action ps_forward_delete ;;
-      4) ps_run_action ps_route_test_match ;;
+      3) ps_run_action ps_forward_edit ;;
+      4) ps_run_action ps_forward_toggle ;;
+      5) ps_run_action ps_forward_delete ;;
+      6) ps_run_action ps_forward_inspect_health ;;
+      7) ps_run_action ps_route_test_match ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -1026,15 +1032,20 @@ ps_menu_advanced_inbound_management() {
 
 ps_menu_advanced_outbound_routing() {
   while true; do
-    ps_ui_menu_select_with_hint "出站与高级路由（高级）" "面向需要精细控制链路策略的用户。" "返回" "请选择" \
-      "查看出站" \
-      "创建出站" \
-      "编辑出站" \
-      "删除出站" \
-      "查看高级路由规则" \
-      "创建高级路由规则" \
+    ps_ui_menu_select_with_hint "高级绑定/编排（高级）" "面向需要精细控制链路策略的用户。" "返回" "请选择" \
+      "查看上游出口" \
+      "创建上游出口" \
+      "编辑上游出口" \
+      "删除上游出口" \
+      "查看路由规则" \
+      "创建路由规则" \
+      "编辑路由规则" \
+      "启用/禁用路由规则" \
+      "删除路由规则" \
+      "路由上移" \
+      "路由下移" \
+      "调整路由优先级（手动）" \
       "转发管理（高级）" \
-      "调整路由优先级" \
       "测试路由匹配"
 
     case "${PS_UI_LAST_CHOICE}" in
@@ -1044,9 +1055,14 @@ ps_menu_advanced_outbound_routing() {
       4) ps_run_action ps_outbound_delete ;;
       5) ps_run_action ps_route_list ;;
       6) ps_run_action ps_route_create_rule ;;
-      7) ps_menu_forwarding ;;
-      8) ps_run_action ps_route_reorder_priority ;;
-      9) ps_run_action ps_route_test_match ;;
+      7) ps_run_action ps_route_edit_rule ;;
+      8) ps_run_action ps_route_toggle_rule ;;
+      9) ps_run_action ps_route_delete_rule ;;
+      10) ps_run_action ps_route_move_up ;;
+      11) ps_run_action ps_route_move_down ;;
+      12) ps_run_action ps_route_reorder_priority ;;
+      13) ps_menu_forwarding ;;
+      14) ps_run_action ps_route_test_match ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -1078,25 +1094,50 @@ ps_menu_service_management() {
 
 ps_menu_local_proxy_forward() {
   while true; do
-    ps_ui_menu_select_with_hint "本地代理与转发" "创建本地 SOCKS5/HTTP/Mixed 入口，或配置链式转发。" "返回" "请选择" \
+    ps_ui_menu_select_with_hint "本地代理与转发" "创建本地入口与转发链，让流量进入你定义的上游出口。" "返回" "请选择" \
       "查看本地代理入口" \
       "创建本地代理入口（推荐）" \
-      "创建公网监听入口" \
-      "编辑监听入口" \
-      "删除监听入口" \
-      "创建转发规则" \
-      "查看转发规则" \
-      "删除转发规则"
+      "编辑本地代理入口" \
+      "删除本地代理入口" \
+      "创建转发链（推荐）" \
+      "查看转发链" \
+      "编辑转发链" \
+      "启用/禁用转发链" \
+      "删除转发链" \
+      "查看绑定诊断"
 
     case "${PS_UI_LAST_CHOICE}" in
-      1) ps_run_action ps_inbound_list ;;
+      1) ps_run_action ps_inbound_list_local_only ;;
       2) ps_run_action ps_action_create_local_proxy_entry ;;
-      3) ps_run_action ps_inbound_create_public ;;
-      4) ps_run_action ps_inbound_edit ;;
-      5) ps_run_action ps_inbound_delete ;;
-      6) ps_run_action ps_forward_create ;;
-      7) ps_run_action ps_forward_list ;;
-      8) ps_run_action ps_forward_delete ;;
+      3) ps_run_action ps_inbound_edit ;;
+      4) ps_run_action ps_inbound_delete ;;
+      5) ps_run_action ps_forward_create ;;
+      6) ps_run_action ps_forward_list ;;
+      7) ps_run_action ps_forward_edit ;;
+      8) ps_run_action ps_forward_toggle ;;
+      9) ps_run_action ps_forward_delete ;;
+      10) ps_run_action ps_forward_inspect_health ;;
+      0) break ;;
+      *) ps_ui_warn "选择无效"; ps_pause ;;
+    esac
+  done
+}
+
+ps_menu_upstream_outbound() {
+  while true; do
+    ps_ui_menu_select_with_hint "上游代理与出口" "管理 direct/block/dns 及各类远端上游代理。" "返回" "请选择" \
+      "查看上游出口" \
+      "创建上游出口" \
+      "编辑上游出口" \
+      "删除上游出口" \
+      "查看绑定诊断"
+
+    case "${PS_UI_LAST_CHOICE}" in
+      1) ps_run_action ps_outbound_list ;;
+      2) ps_run_action ps_outbound_create ;;
+      3) ps_run_action ps_outbound_edit ;;
+      4) ps_run_action ps_outbound_delete ;;
+      5) ps_run_action ps_forward_inspect_health ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -1105,25 +1146,27 @@ ps_menu_local_proxy_forward() {
 
 ps_menu_route_rules() {
   while true; do
-    ps_ui_menu_select_with_hint "路由与规则" "管理出站目标与流量规则，决定流量去向。" "返回" "请选择" \
-      "查看出站" \
-      "创建出站" \
-      "编辑出站" \
-      "删除出站" \
+    ps_ui_menu_select_with_hint "路由与规则" "按入口/域名/IP/网络绑定流量到指定上游出口。" "返回" "请选择" \
       "查看路由规则" \
       "创建路由规则" \
-      "调整路由优先级" \
+      "编辑路由规则" \
+      "启用/禁用路由规则" \
+      "删除路由规则" \
+      "路由上移" \
+      "路由下移" \
+      "调整路由优先级（手动）" \
       "测试路由匹配"
 
     case "${PS_UI_LAST_CHOICE}" in
-      1) ps_run_action ps_outbound_list ;;
-      2) ps_run_action ps_outbound_create ;;
-      3) ps_run_action ps_outbound_edit ;;
-      4) ps_run_action ps_outbound_delete ;;
-      5) ps_run_action ps_route_list ;;
-      6) ps_run_action ps_route_create_rule ;;
-      7) ps_run_action ps_route_reorder_priority ;;
-      8) ps_run_action ps_route_test_match ;;
+      1) ps_run_action ps_route_list ;;
+      2) ps_run_action ps_route_create_rule ;;
+      3) ps_run_action ps_route_edit_rule ;;
+      4) ps_run_action ps_route_toggle_rule ;;
+      5) ps_run_action ps_route_delete_rule ;;
+      6) ps_run_action ps_route_move_up ;;
+      7) ps_run_action ps_route_move_down ;;
+      8) ps_run_action ps_route_reorder_priority ;;
+      9) ps_run_action ps_route_test_match ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -1187,6 +1230,7 @@ ps_menu_logs_diagnostics() {
       "仅查看内核/进程状态" \
       "仅查看证书状态" \
       "仅查看冲突检测" \
+      "仅查看转发/路由健康" \
       "仅查看 VLESS-REALITY 诊断" \
       "查看安装日志" \
       "查看 Xray 服务日志" \
@@ -1204,17 +1248,18 @@ ps_menu_logs_diagnostics() {
       2) ps_run_action ps_status_command engine ;;
       3) ps_run_action ps_status_command cert ;;
       4) ps_run_action ps_status_command conflict ;;
-      5) ps_run_action ps_status_command reality ;;
-      6) ps_run_action ps_diag_view_install_log ;;
-      7) ps_run_action ps_diag_view_xray_service_log ;;
-      8) ps_run_action ps_diag_view_singbox_service_log ;;
-      9) ps_run_action ps_diag_view_access_log ;;
-      10) ps_run_action ps_diag_view_error_log ;;
-      11) ps_run_action ps_diag_change_log_level ;;
-      12) ps_run_action ps_diag_toggle_dns_logging ;;
-      13) ps_run_action ps_diag_configure_log_rotation ;;
-      14) ps_run_action ps_diag_export_bundle ;;
-      15) ps_run_action ps_diag_tail_logs ;;
+      5) ps_run_action ps_status_command traffic ;;
+      6) ps_run_action ps_status_command reality ;;
+      7) ps_run_action ps_diag_view_install_log ;;
+      8) ps_run_action ps_diag_view_xray_service_log ;;
+      9) ps_run_action ps_diag_view_singbox_service_log ;;
+      10) ps_run_action ps_diag_view_access_log ;;
+      11) ps_run_action ps_diag_view_error_log ;;
+      12) ps_run_action ps_diag_change_log_level ;;
+      13) ps_run_action ps_diag_toggle_dns_logging ;;
+      14) ps_run_action ps_diag_configure_log_rotation ;;
+      15) ps_run_action ps_diag_export_bundle ;;
+      16) ps_run_action ps_diag_tail_logs ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
@@ -1477,27 +1522,31 @@ main() {
   fi
 
   while true; do
-    ps_ui_menu_select_with_hint "主菜单" "推荐流程：先创建服务，再创建本地代理入口，最后导出配置并检查状态。" "退出" "请选择" \
+    ps_ui_menu_select_with_hint "主菜单" "推荐流程：创建服务 -> 创建本地入口 -> 创建转发链/路由 -> 导出并诊断。" "退出" "请选择" \
       "创建与管理服务" \
       "本地代理与转发" \
+      "上游代理与出口" \
       "路由与规则" \
       "证书与域名" \
       "订阅与导出" \
       "运行状态与诊断" \
       "核心与运行控制" \
       "备份、清理与卸载" \
+      "高级绑定/编排" \
       "高级设置"
 
     case "${PS_UI_LAST_CHOICE}" in
       1) ps_menu_service_management ;;
       2) ps_menu_local_proxy_forward ;;
-      3) ps_menu_route_rules ;;
-      4) ps_menu_cert_domain ;;
-      5) ps_menu_subscribe_export ;;
-      6) ps_menu_logs_diagnostics ;;
-      7) ps_menu_engines_services ;;
-      8) ps_menu_backup_restore ;;
-      9) ps_menu_advanced_settings ;;
+      3) ps_menu_upstream_outbound ;;
+      4) ps_menu_route_rules ;;
+      5) ps_menu_cert_domain ;;
+      6) ps_menu_subscribe_export ;;
+      7) ps_menu_logs_diagnostics ;;
+      8) ps_menu_engines_services ;;
+      9) ps_menu_backup_restore ;;
+      10) ps_menu_forwarding ;;
+      11) ps_menu_advanced_settings ;;
       0)
         ps_ui_info "已退出"
         break

@@ -1,10 +1,6 @@
 # kprxy（中文优先）
 
-`kprxy` 是一个面向 Linux 的模块化代理管理工具。产品目标是：
-
-- 普通用户按“创建服务 -> 创建本地代理入口 -> 导出配置 -> 查看状态”完成流程
-- 高级用户仍可使用模板/监听入口/路由等细粒度控制
-- 默认与 3x-ui、其他 Xray/sing-box 项目安全共存
+`kprxy` 是一个面向 Linux 的模块化代理管理工具，默认与 3x-ui/其他 Xray/sing-box 工具隔离共存。
 
 ## Quick Start（最短路径）
 
@@ -19,46 +15,95 @@ kprxy
 kprxy update
 kprxy service-wizard
 kprxy status
+kprxy status traffic
 kprxy uninstall
 ```
 
-## 核心概念（先讲人话）
+## 新的转发/路由心智模型
 
-- 服务：对外可用的代理服务（例如 VLESS/REALITY、Shadowsocks 2022）
-- 本地代理入口：本机 SOCKS5/HTTP/Mixed 入口
-- 转发：把本地入口流量转发到指定出站目标
-- 路由与规则：控制流量走向
+把对象分成 5 类：
 
-高级概念（在“高级设置”中）：
+- 公网服务入口：对外服务监听（通常由“创建服务”自动生成）
+- 本地代理入口：本机 SOCKS5/HTTP/Mixed 监听
+- 上游代理与出口：direct/block/dns/socks5/http/vless/shadowsocks/selector
+- 转发链：把“本地入口”绑定到“上游出口”，并带一条关联路由
+- 路由规则：按入口/域名/IP/网络匹配流量到目标出口
 
-- 协议模板：定义协议/加密/传输参数
-- 监听入口：定义端口监听方式并可绑定协议模板
+推荐顺序：
 
-## 一键搭建向导（推荐）
+1. 创建本地代理入口
+2. 创建上游代理与出口
+3. 创建转发链（推荐）
+4. 在“路由与规则”精细化匹配条件
+5. 用 `kprxy status traffic` 做健康检查
 
-```bash
-kprxy service-wizard
-```
+## 菜单结构（转发/路由重构后）
 
-该向导会自动完成：
+主菜单核心路径：
 
-- 创建协议模板（服务主体）
-- 自动创建并绑定公网监听入口（元数据绑定）
+1. 创建与管理服务
+2. 本地代理与转发
+3. 上游代理与出口
+4. 路由与规则
+5. 证书与域名
+6. 订阅与导出
+7. 运行状态与诊断
+8. 核心与运行控制
+9. 备份、清理与卸载
+10. 高级绑定/编排
+11. 高级设置
 
-这让普通用户无需先理解“模板/入站绑定”即可完成服务创建。
+## 本地代理入口
 
-证书与协议行为（创建时会明确提示）：
+在“本地代理与转发”可执行：
 
-- `TLS` 型服务（如 VLESS-Vision-TLS、Shadowsocks 2022-TLS）：需要证书，可走 ACME 自动签发或手动安装
-- `REALITY` 型服务：默认不要求为你的节点域名申请 TLS 证书
-- REALITY 会单独提示并输入握手目标 `serverName`，避免与节点公开地址混用
-- REALITY 监听非 `443` 端口会给出风险提醒和确认
+- 查看/创建/编辑/删除本地入口
+- 创建/查看/编辑/启停/删除转发链
+- 查看绑定诊断
 
-## 安装与启动
+创建后会提示下一步（例如去创建转发链或绑定路由）。
 
-见上方 Quick Start。
+## 上游代理与出口
 
-## 状态命令
+在“上游代理与出口”可执行：
+
+- 查看/创建/编辑/删除上游出口
+- 支持 direct、block、dns、socks5、http、vless、shadowsocks、selector
+
+创建后会提示下一步（例如去创建转发链或路由规则）。
+
+## 路由规则全生命周期（含删除）
+
+在“路由与规则”可执行：
+
+- 查看
+- 创建
+- 编辑
+- 启用/禁用
+- 删除（支持引用检测）
+- 上移/下移
+- 手动设置优先级
+- 匹配测试
+
+支持匹配维度：
+
+- 入口标签（inbound/local-entry tag）
+- 域名后缀
+- 域名关键词
+- IP/CIDR
+- 网络类型（tcp/udp）
+- 兜底规则（全部条件留空）
+
+## 删除与引用安全
+
+关键对象删除前会做引用检测并提供安全处理：
+
+- 删除入口：检测路由/转发链引用，可选择“解绑后删除”
+- 删除上游出口：检测路由/转发链引用，可选择“改为 direct 后删除”
+- 删除路由规则：检测转发链引用，可选择“解绑后删除”
+- 删除转发链：可选“仅删链对象”或“级联删除自动创建对象”
+
+## 状态与诊断
 
 ```bash
 kprxy status
@@ -66,20 +111,26 @@ kprxy status summary
 kprxy status engine
 kprxy status cert
 kprxy status conflict
+kprxy status traffic
 kprxy status reality
 ```
 
-状态输出包含：安装状态、内核状态、端口监听、配置状态、应用状态、VLESS-REALITY 诊断、systemd 状态、证书状态、冲突检测。
+`status traffic` 会显示：
 
-`status reality` 会集中展示：
+- 本地入口/公网入口/上游出口/路由/转发链数量
+- 路由缺失出口引用
+- 路由缺失入口引用
+- 转发链绑定失效
+- 未被引用的本地入口
+- 未被引用的上游出口
 
-- address / port / uuid / transport / flow
-- REALITY `serverName` / `fingerprint` / `publicKey` / `shortId`
-- 是否监听、所属进程、是否已应用到当前运行配置
+## 证书与协议行为
+
+- TLS 型服务（如 VLESS-Vision-TLS、Shadowsocks 2022-TLS）：需要证书
+- REALITY 型服务：默认不要求为节点域名签发 TLS 证书
+- REALITY 创建时会单独要求 `serverName/dest`，避免和 `address` 混用
 
 ## 卸载 / 清理 / 重置
-
-默认保守：`uninstall` 保留数据。
 
 ```bash
 kprxy uninstall
@@ -89,68 +140,12 @@ kprxy cleanup
 kprxy reset
 ```
 
-非交互自动确认：
+默认保守：`uninstall` 保留数据，`--purge` 才彻底清理（不可恢复）。
 
-```bash
-kprxy uninstall --keep-data --yes
-kprxy uninstall --purge --yes
-kprxy cleanup --yes
-kprxy reset --yes
-```
+## 与 3x-ui / 其他项目共存
 
-行为说明：
-
-- `uninstall` / `--keep-data`：移除启动器、kprxy 服务、kprxy 私有二进制；保留配置/证书/日志/状态/导出
-- `uninstall --purge`：彻底删除 kprxy 自有资源（不可恢复）
-- `cleanup`：仅清理临时/缓存/导出产物
-- `reset`：重置状态与配置为基线，保留框架安装
-
-## 菜单架构（中文优先）
-
-主菜单：
-
-1. 创建与管理服务
-2. 本地代理与转发
-3. 路由与规则
-4. 证书与域名
-5. 订阅与导出
-6. 运行状态与诊断
-7. 核心与运行控制
-8. 备份、清理与卸载
-9. 高级设置
-0. 退出
-
-设计意图：
-
-- 普通用户优先看到“服务、本地代理、导出、状态”
-- “协议模板/监听入口”等抽象概念后置到“高级设置”
-
-## 与 3x-ui / 其他面板的共存策略
-
-- 默认隔离：`/opt/kprxy`（root）或 `<项目目录>/.runtime/kprxy`（非 root）
-- systemd 服务名隔离：`kprxy-xray`、`kprxy-singbox`
-- 卸载默认只处理 kprxy 自有资源
-- 不会默认删除 `xray.service`、`sing-box.service` 或 3x-ui 服务
-
-## 导出与客户端兼容（VLESS-REALITY）
-
-- 导出会明确区分：
-  - 客户端连接地址（`address:port`）
-  - REALITY 握手目标（`serverName`）
-- 不再默认把 `serverName` 回退为节点公开地址
-- 导出字段按 VLESS-REALITY 关键参数映射：`security=reality`、`pbk`、`sid`、`fp`、`flow`、传输层参数
-- 若关键 REALITY 参数不完整，导出会跳过并给出告警，避免生成“可导入但不可用”的配置
-
-## 默认隔离路径（root）
-
-- 项目目录：`/opt/kprxy`
-- 私有二进制：`/opt/kprxy/bin/`
-- 配置：`/opt/kprxy/runtime/xray/config.json`、`/opt/kprxy/runtime/sing-box/config.json`
-- 日志：`/opt/kprxy/runtime/log/`
-- 证书：`/opt/kprxy/certs/`
-
-## 注意事项
-
-- `--purge` 不可逆
-- `--yes` 仅建议用于自动化场景
-- 依赖 `jq`（缺失时依赖 manifest 的能力不可用）
+- 二进制隔离：`/opt/kprxy/bin/*`
+- 配置隔离：`/opt/kprxy/runtime/*`
+- 服务名隔离：`kprxy-xray` / `kprxy-singbox`
+- 证书隔离：`/opt/kprxy/certs/*`
+- 卸载默认只处理 kprxy 自有资源，不覆盖他人服务/配置

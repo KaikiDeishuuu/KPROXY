@@ -15,7 +15,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
 ps_outbound_pick_tag() {
   mapfile -t rows < <(jq -r '.outbounds[] | "\(.tag)|\(.type)|\(.enabled)"' "${PS_MANIFEST}")
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    ps_log_warn "未找到出站。"
+    ps_log_warn "未找到上游出口。"
     return 1
   fi
 
@@ -28,9 +28,9 @@ ps_outbound_pick_tag() {
   done
 
   local choice
-  choice="$(ps_prompt_required "请选择出站编号")"
+  choice="$(ps_prompt_required "请选择上游出口编号")"
   if ! [[ "${choice}" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#rows[@]})); then
-    ps_log_error "出站选择无效"
+    ps_log_error "上游出口选择无效"
     return 1
   fi
 
@@ -38,20 +38,34 @@ ps_outbound_pick_tag() {
   printf "%s" "${tag}"
 }
 
+ps_outbound_is_builtin() {
+  local tag="${1:-}"
+  [[ "${tag}" == "direct" || "${tag}" == "block" || "${tag}" == "dns-out" ]]
+}
+
+ps_outbound_reference_counts() {
+  local tag="${1:-}"
+  jq -r --arg tag "${tag}" '{route_refs:([.routes[]? | select(.outbound==$tag)]|length),forward_refs:([.forwardings[]? | select(.outbound_tag==$tag)]|length)} | "\(.route_refs)|\(.forward_refs)"' "${PS_MANIFEST}"
+}
+
 ps_outbound_list() {
-  ps_print_header "出站列表"
+  ps_print_header "上游出口列表"
   jq -r '
     if (.outbounds | length) == 0 then
-      "未配置出站。"
+      "未配置上游出口。"
     else
       (.outbounds[] |
-        "- \(.tag) type=\(.type) server=\(.server // "-"):\(.port // "-") 启用=\(.enabled)")
+        "- " + (.tag // "-")
+        + " | 类型=" + (.type // "-")
+        + " | 远端=" + ((.server // "-") + ":" + ((.port // "-")|tostring))
+        + " | 启用=" + ((.enabled // true)|tostring)
+      )
     end
   ' "${PS_MANIFEST}"
 }
 
 ps_outbound_create() {
-  ps_print_header "创建出站"
+  ps_print_header "创建上游出口"
   printf "1) direct\n"
   printf "2) block\n"
   printf "3) dns\n"
@@ -62,7 +76,7 @@ ps_outbound_create() {
   printf "8) selector（优先 sing-box）\n"
 
   local kind type
-  kind="$(ps_prompt_required "出站类型编号")"
+  kind="$(ps_prompt_required "上游类型编号")"
   case "${kind}" in
     1) type="direct" ;;
     2) type="block" ;;
@@ -72,24 +86,27 @@ ps_outbound_create() {
     6) type="vless" ;;
     7) type="shadowsocks" ;;
     8) type="selector" ;;
-    *) ps_log_error "出站类型无效"; return 1 ;;
+    *) ps_log_error "上游类型无效"; return 1 ;;
   esac
 
   local default_tag="${type}-$(ps_generate_id out | awk -F'-' '{print $NF}')"
-  local tag
-  if [[ "${type}" == "direct" || "${type}" == "block" || "${type}" == "dns" ]]; then
+  if [[ "${type}" == "direct" || "${type}" == "block" ]]; then
     default_tag="${type}"
   fi
-  tag="$(ps_prompt "出站标签" "${default_tag}")"
+  if [[ "${type}" == "dns" ]]; then
+    default_tag="dns-out"
+  fi
 
+  local tag
+  tag="$(ps_prompt "上游标签" "${default_tag}")"
   if ps_manifest_array_has '.outbounds' 'tag' "${tag}"; then
-    ps_log_error "出站标签 already exists: ${tag}"
+    ps_log_error "上游标签已存在: ${tag}"
     return 1
   fi
 
   local server="" port="0" username="" password="" network="tcp" sni="" fingerprint="" uuid="" method="" members_json='[]'
   if [[ "${type}" =~ ^(socks5|http|vless|shadowsocks)$ ]]; then
-    server="$(ps_prompt_required "远端服务器")"
+    server="$(ps_prompt_required "远端地址")"
     port="$(ps_prompt_required "远端端口")"
     if ! ps_validate_port "${port}"; then
       ps_log_error "端口无效"
@@ -113,7 +130,7 @@ ps_outbound_create() {
       password="$(ps_prompt "密码" "$(ps_generate_ss2022_password)")"
       ;;
     selector)
-      members_json="$(ps_csv_to_json_array "$(ps_prompt "成员（出站标签，逗号分隔）" "direct,block")")"
+      members_json="$(ps_csv_to_json_array "$(ps_prompt "成员（标签逗号分隔）" "direct,block")")"
       ;;
   esac
 
@@ -151,19 +168,24 @@ ps_outbound_create() {
     }')"
 
   ps_manifest_update --argjson outbound "${outbound_json}" --arg ts "$(ps_now_iso)" '.outbounds += [$outbound] | .meta.updated_at = $ts'
-  ps_log_success "出站已创建： ${tag}"
+
+  ps_log_success "上游出口已创建： ${tag}"
+  printf "摘要：标签=%s | 类型=%s | 远端=%s:%s | 启用=true\n" "${tag}" "${type}" "${server:--}" "${port:--}"
+  printf "下一步建议：\n"
+  printf -- "- 可前往“本地代理与转发”创建转发链\n"
+  printf -- "- 可前往“路由与规则”绑定该上游\n"
 }
 
 ps_outbound_edit() {
-  ps_print_header "编辑出站"
+  ps_print_header "编辑上游出口"
   local tag
   tag="$(ps_outbound_pick_tag)" || return 1
 
   local new_server new_port username password network sni fingerprint enabled
-  new_server="$(ps_prompt "服务器（留空保持）" "")"
-  new_port="$(ps_prompt "端口（留空保持）" "")"
+  new_server="$(ps_prompt "远端地址（留空保持）" "")"
+  new_port="$(ps_prompt "远端端口（留空保持）" "")"
   username="$(ps_prompt "用户名（留空保持）" "")"
-  password="$(ps_prompt "密码 (empty to keep)" "")"
+  password="$(ps_prompt "密码（留空保持）" "")"
   network="$(ps_prompt "网络（留空保持）" "")"
   sni="$(ps_prompt "SNI（留空保持）" "")"
   fingerprint="$(ps_prompt "指纹（留空保持）" "")"
@@ -183,7 +205,6 @@ ps_outbound_edit() {
   [[ -n "${sni}" ]] && jq_filter+=' | .outbounds |= map(if .tag == $tag then .sni = $sni else . end)'
   [[ -n "${fingerprint}" ]] && jq_filter+=' | .outbounds |= map(if .tag == $tag then .fingerprint = $fingerprint else . end)'
   [[ -n "${enabled}" ]] && jq_filter+=' | .outbounds |= map(if .tag == $tag then .enabled = ($enabled == "true") else . end)'
-
   jq_filter+=' | .outbounds |= map(if .tag == $tag then .updated_at = $ts else . end) | .meta.updated_at = $ts'
 
   ps_manifest_update \
@@ -199,24 +220,47 @@ ps_outbound_edit() {
     --arg ts "$(ps_now_iso)" \
     "${jq_filter}"
 
-  ps_log_success "出站已更新： ${tag}"
+  ps_log_success "上游出口已更新： ${tag}"
 }
 
 ps_outbound_delete() {
-  ps_print_header "删除出站"
+  ps_print_header "删除上游出口"
   local tag
   tag="$(ps_outbound_pick_tag)" || return 1
 
-  if [[ "${tag}" == "direct" || "${tag}" == "block" || "${tag}" == "dns-out" ]]; then
-    ps_log_warn "内置出站不可删除： ${tag}"
+  if ps_outbound_is_builtin "${tag}"; then
+    ps_log_warn "内置上游不可删除： ${tag}"
     return 1
   fi
 
-  if ! ps_confirm "删除出站 ${tag}?" "N"; then
-    ps_log_info "已取消"
-    return 0
+  local refs route_refs forward_refs
+  refs="$(ps_outbound_reference_counts "${tag}")"
+  IFS='|' read -r route_refs forward_refs <<<"${refs}"
+
+  if [[ "${route_refs}" -gt 0 || "${forward_refs}" -gt 0 ]]; then
+    ps_log_warn "该上游存在引用：路由=${route_refs}，转发链=${forward_refs}。"
+    printf "1) 取消\n"
+    printf "2) 安全解绑（路由改为 direct，转发链改为 direct）并删除\n"
+    local action
+    action="$(ps_prompt_required "请选择")"
+    case "${action}" in
+      1) ps_log_info "已取消"; return 0 ;;
+      2)
+        ps_manifest_update --arg tag "${tag}" --arg ts "$(ps_now_iso)" '
+          .routes |= map(if .outbound == $tag then .outbound = "direct" | .updated_at = $ts else . end)
+          | .forwardings |= map(if .outbound_tag == $tag then .outbound_tag = "direct" | .target_host = "" | .target_port = 0 | .updated_at = $ts else . end)
+          | .meta.updated_at = $ts
+        '
+        ;;
+      *) ps_log_error "选择无效"; return 1 ;;
+    esac
+  else
+    if ! ps_confirm "删除上游出口 ${tag}？" "N"; then
+      ps_log_info "已取消"
+      return 0
+    fi
   fi
 
-  ps_manifest_update --arg tag "${tag}" --arg ts "$(ps_now_iso)" '.outbounds |= map(select(.tag != $tag)) | .routes |= map(if .outbound == $tag then .outbound = "direct" else . end) | .meta.updated_at = $ts'
-  ps_log_success "出站已删除： ${tag}"
+  ps_manifest_update --arg tag "${tag}" --arg ts "$(ps_now_iso)" '.outbounds |= map(select(.tag != $tag)) | .meta.updated_at = $ts'
+  ps_log_success "上游出口已删除： ${tag}"
 }
