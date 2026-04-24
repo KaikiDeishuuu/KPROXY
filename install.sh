@@ -515,7 +515,7 @@ ps_show_next_steps() {
   printf "\n下一步建议：\n"
   local tip
   for tip in "${tips[@]}"; do
-    printf "- %s\n" "${tip}"
+    printf -- "- %s\n" "${tip}"
   done
 }
 
