@@ -295,7 +295,7 @@ ps_render_xray_config() {
   outbounds_json="$(ps_render_xray_outbounds_json)"
   routes_json="$(ps_render_xray_routes_json)"
 
-  candidate="$(mktemp)"
+  candidate="$(mktemp --suffix=.json)"
   jq \
     --argjson log "${log_json}" \
     --argjson inbounds "${inbounds_json}" \
@@ -305,7 +305,7 @@ ps_render_xray_config() {
     "${template}" >"${candidate}"
 
   if [[ -x "${xray_bin}" ]]; then
-    validate_log="$(mktemp)"
+    validate_log="$(mktemp --suffix=.log)"
     if ! "${xray_bin}" run -test -c "${candidate}" >"${validate_log}" 2>&1; then
       validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
       [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
@@ -561,7 +561,7 @@ ps_render_singbox_config() {
   routes_json="$(ps_render_singbox_routes_json)"
   final_tag="$(jq -r '.routes | sort_by(.priority) | map(select(.enabled != false)) | if length == 0 then "direct" else .[length - 1].outbound end' "${PS_MANIFEST}")"
 
-  candidate="$(mktemp)"
+  candidate="$(mktemp --suffix=.json)"
   jq \
     --arg level "$(jq -r '.logs.level // "info"' "${PS_MANIFEST}")" \
     --argjson inbounds "${inbounds_json}" \
@@ -572,7 +572,7 @@ ps_render_singbox_config() {
     "${template}" >"${candidate}"
 
   if [[ -x "${singbox_bin}" ]]; then
-    validate_log="$(mktemp)"
+    validate_log="$(mktemp --suffix=.log)"
     if ! "${singbox_bin}" check -c "${candidate}" >"${validate_log}" 2>&1; then
       validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
       [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
