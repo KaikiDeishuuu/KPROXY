@@ -51,12 +51,20 @@ ps_extract_x25519_key_from_output() {
   local field="${2:-private}"
   local key=""
 
+  # Xray pre-26:  "Private key: <key>"       /  "Public key: <key>"
+  # Xray 26+:     "PrivateKey: <key>"         /  "Password (PublicKey): <key>"
   case "${field}" in
     private)
-      key="$(printf '%s\n' "${output}" | sed -n 's/^[[:space:]]*Private key:[[:space:]]*//p' | head -n 1 | tr -d '\r')"
+      key="$(printf '%s\n' "${output}" | sed -n \
+        -e 's/^[[:space:]]*Private key:[[:space:]]*//p' \
+        -e 's/^[[:space:]]*PrivateKey:[[:space:]]*//p' \
+        | head -n 1 | tr -d '\r')"
       ;;
     public)
-      key="$(printf '%s\n' "${output}" | sed -n 's/^[[:space:]]*Public key:[[:space:]]*//p' | head -n 1 | tr -d '\r')"
+      key="$(printf '%s\n' "${output}" | sed -n \
+        -e 's/^[[:space:]]*Public key:[[:space:]]*//p' \
+        -e 's/^[[:space:]]*Password (PublicKey):[[:space:]]*//p' \
+        | head -n 1 | tr -d '\r')"
       ;;
     *)
       return 1
@@ -65,6 +73,7 @@ ps_extract_x25519_key_from_output() {
 
   printf '%s' "${key}"
 }
+
 
 ps_ss2022_key_length_for_method() {
   local method="${1:-2022-blake3-aes-128-gcm}"
