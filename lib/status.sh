@@ -254,6 +254,98 @@ ps_status_ports_section() {
   fi
 }
 
+ps_status_reality_applied_state() {
+  local engine="${1:-xray}"
+  local stack_updated_at="${2:-}"
+
+  local render_ok last_success_at
+  render_ok="$(jq -r --arg e "${engine}" '.status.render[$e].ok // false' "${PS_MANIFEST}" 2>/dev/null || printf "false")"
+  last_success_at="$(jq -r --arg e "${engine}" '.status.render[$e].last_success_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+
+  if [[ "${render_ok}" == "true" && -n "${last_success_at}" ]]; then
+    if [[ -z "${stack_updated_at}" || "${last_success_at}" == "${stack_updated_at}" || "${last_success_at}" > "${stack_updated_at}" ]]; then
+      printf "已应用"
+      return 0
+    fi
+  fi
+
+  printf "未应用"
+  return 1
+}
+
+ps_status_reality_section() {
+  ps_status_section "VLESS-REALITY 诊断"
+
+  if [[ ! -f "${PS_MANIFEST}" ]]; then
+    printf -- "- 未找到 manifest，无法检查 REALITY 参数。\n"
+    return 0
+  fi
+
+  local count=0
+  while IFS=$'\t' read -r stack_id name engine address port uuid flow transport server_name fingerprint public_key short_id updated_at; do
+    [[ -n "${stack_id}" ]] || continue
+    count=$((count + 1))
+
+    local listening owner proc pid listening_text applied_state
+    listening="否"
+    proc="-"
+    pid="-"
+    if ps_port_is_listening "${port}"; then
+      listening="是"
+      owner="$(ps_port_listener_owner "${port}" || true)"
+      if [[ -n "${owner}" ]]; then
+        IFS='|' read -r proc pid <<<"${owner}"
+      fi
+    fi
+    listening_text="监听=${listening}（进程=${proc:-未知}，PID=${pid:-未知}）"
+
+    applied_state="$(ps_status_reality_applied_state "${engine}" "${updated_at}")"
+
+    printf -- "- 服务：%s（%s）\n" "${name}" "${stack_id}"
+    printf "  address：%s\n" "${address}"
+    printf "  port：%s\n" "${port}"
+    printf "  uuid：%s\n" "${uuid}"
+    printf "  transport：%s\n" "${transport}"
+    printf "  flow：%s\n" "${flow:--}"
+    printf "  serverName：%s\n" "${server_name}"
+    printf "  fingerprint：%s\n" "${fingerprint}"
+    printf "  publicKey：%s\n" "${public_key:--}"
+    printf "  shortId：%s\n" "${short_id:--}"
+    printf "  证书要求：REALITY 默认不要求节点域名证书\n"
+    printf "  监听状态：%s\n" "${listening_text}"
+    printf "  应用状态：%s（引擎=%s）\n" "${applied_state}" "${engine}"
+
+    if [[ "${port}" != "443" ]]; then
+      printf "  风险提示：REALITY 当前监听端口为非 443（%s），可能影响可用性。\n" "${port}"
+    fi
+  done < <(
+    jq -r '
+      .stacks[]?
+      | select(.enabled == true and .protocol == "vless" and .security == "reality")
+      | [
+          .stack_id,
+          (.name // .stack_id),
+          (.engine // "xray"),
+          (.server // ""),
+          ((.port // 0) | tostring),
+          (.uuid // ""),
+          (.flow // ""),
+          (.transport // "tcp"),
+          (.reality.server_name // ((.reality.dest // "") | split(":")[0]) // ""),
+          (.reality.fingerprint // .fingerprint // "chrome"),
+          (.reality.public_key // ""),
+          (.reality.short_id // ""),
+          (.updated_at // .created_at // "")
+        ]
+      | @tsv
+    ' "${PS_MANIFEST}" 2>/dev/null
+  )
+
+  if [[ "${count}" -eq 0 ]]; then
+    printf -- "- 未找到已启用的 VLESS-REALITY 服务。\n"
+  fi
+}
+
 ps_status_validate_config_now() {
   local engine="${1}"
   local cfg bin
@@ -676,6 +768,7 @@ ps_status_summary() {
   ps_status_ports_section
   ps_status_config_section
   ps_status_apply_section
+  ps_status_reality_section
   ps_status_systemd_section
   ps_status_cert_section
   ps_status_conflict_section
@@ -697,6 +790,11 @@ ps_status_conflict_only() {
   ps_status_conflict_section
 }
 
+ps_status_reality_only() {
+  ps_print_header "运行状态 - VLESS-REALITY 诊断"
+  ps_status_reality_section
+}
+
 ps_status_command() {
   local scope="${1:-summary}"
   case "${scope}" in
@@ -704,9 +802,10 @@ ps_status_command() {
     cert|certs) ps_status_cert_only ;;
     engine|engines|process) ps_status_engine_only ;;
     conflict|coexist|coexistence) ps_status_conflict_only ;;
+    reality|vless-reality) ps_status_reality_only ;;
     *)
       ps_log_error "不支持的 status 子项：${scope}"
-      printf "可用：kprxy status [summary|engine|cert|conflict]\n"
+      printf "可用：kprxy status [summary|engine|cert|conflict|reality]\n"
       return 2
       ;;
   esac

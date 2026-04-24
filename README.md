@@ -47,6 +47,13 @@ kprxy service-wizard
 
 这让普通用户无需先理解“模板/入站绑定”即可完成服务创建。
 
+证书与协议行为（创建时会明确提示）：
+
+- `TLS` 型服务（如 VLESS-Vision-TLS、Shadowsocks 2022-TLS）：需要证书，可走 ACME 自动签发或手动安装
+- `REALITY` 型服务：默认不要求为你的节点域名申请 TLS 证书
+- REALITY 会单独提示并输入握手目标 `serverName`，避免与节点公开地址混用
+- REALITY 监听非 `443` 端口会给出风险提醒和确认
+
 ## 安装与启动
 
 见上方 Quick Start。
@@ -59,9 +66,16 @@ kprxy status summary
 kprxy status engine
 kprxy status cert
 kprxy status conflict
+kprxy status reality
 ```
 
-状态输出包含：安装状态、内核状态、端口监听、配置状态、systemd 状态、证书状态、冲突检测。
+状态输出包含：安装状态、内核状态、端口监听、配置状态、应用状态、VLESS-REALITY 诊断、systemd 状态、证书状态、冲突检测。
+
+`status reality` 会集中展示：
+
+- address / port / uuid / transport / flow
+- REALITY `serverName` / `fingerprint` / `publicKey` / `shortId`
+- 是否监听、所属进程、是否已应用到当前运行配置
 
 ## 卸载 / 清理 / 重置
 
@@ -117,6 +131,15 @@ kprxy reset --yes
 - systemd 服务名隔离：`kprxy-xray`、`kprxy-singbox`
 - 卸载默认只处理 kprxy 自有资源
 - 不会默认删除 `xray.service`、`sing-box.service` 或 3x-ui 服务
+
+## 导出与客户端兼容（VLESS-REALITY）
+
+- 导出会明确区分：
+  - 客户端连接地址（`address:port`）
+  - REALITY 握手目标（`serverName`）
+- 不再默认把 `serverName` 回退为节点公开地址
+- 导出字段按 VLESS-REALITY 关键参数映射：`security=reality`、`pbk`、`sid`、`fp`、`flow`、传输层参数
+- 若关键 REALITY 参数不完整，导出会跳过并给出告警，避免生成“可导入但不可用”的配置
 
 ## 默认隔离路径（root）
 

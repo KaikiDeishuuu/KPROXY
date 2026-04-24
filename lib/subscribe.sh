@@ -10,6 +10,33 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # shellcheck source=lib/logger.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 
+ps_sub_validate_vless_reality_stack() {
+  local stack_json="${1:-}"
+  local stack_id name
+  local address port uuid server_name public_key transport flow
+
+  stack_id="$(jq -r '.stack_id // ""' <<<"${stack_json}")"
+  name="$(jq -r '.name // .stack_id // "-"' <<<"${stack_json}")"
+  address="$(jq -r '.server // ""' <<<"${stack_json}")"
+  port="$(jq -r '(.port // 0) | tostring' <<<"${stack_json}")"
+  uuid="$(jq -r '.uuid // ""' <<<"${stack_json}")"
+  server_name="$(jq -r '.reality.server_name // ((.reality.dest // "") | split(":")[0]) // ""' <<<"${stack_json}")"
+  public_key="$(jq -r '.reality.public_key // ""' <<<"${stack_json}")"
+  transport="$(jq -r '.transport // "tcp"' <<<"${stack_json}")"
+  flow="$(jq -r '.flow // ""' <<<"${stack_json}")"
+
+  if [[ -z "${address}" || -z "${uuid}" || -z "${server_name}" || -z "${public_key}" || ! "${port}" =~ ^[0-9]+$ ]]; then
+    ps_log_warn "跳过导出：VLESS-REALITY 参数不完整（服务=${name}，stack_id=${stack_id}）。"
+    return 1
+  fi
+
+  if [[ "${transport}" == "tcp" && "${flow}" == "" ]]; then
+    ps_log_warn "服务 ${name}（${stack_id}）为 TCP REALITY 且 flow 为空，客户端兼容性可能受影响。"
+  fi
+
+  return 0
+}
+
 ps_sub_url_encode() {
   local value="${1:-}"
   printf "%s" "${value}" | sed \
@@ -128,8 +155,9 @@ ps_sub_stack_link_from_json() {
       query+="&sni=$(ps_sub_url_encode "${sni}")"
       query+="&fp=$(ps_sub_url_encode "${fingerprint}")"
     elif [[ "${security}" == "reality" ]]; then
+      ps_sub_validate_vless_reality_stack "${stack_json}" || return 1
       query+="&security=reality"
-      query+="&sni=$(ps_sub_url_encode "$(jq -r '.reality.server_name // .sni // .server' <<<"${stack_json}")")"
+      query+="&sni=$(ps_sub_url_encode "$(jq -r '.reality.server_name // ((.reality.dest // "") | split(":")[0]) // "www.microsoft.com"' <<<"${stack_json}")")"
       query+="&fp=$(ps_sub_url_encode "$(jq -r '.reality.fingerprint // .fingerprint // "chrome"' <<<"${stack_json}")")"
       query+="&pbk=$(ps_sub_url_encode "$(jq -r '.reality.public_key // ""' <<<"${stack_json}")")"
       query+="&sid=$(ps_sub_url_encode "$(jq -r '.reality.short_id // ""' <<<"${stack_json}")")"
@@ -284,7 +312,7 @@ ps_sub_clash_proxy_from_stack() {
       printf "    tls: true\n"
       if [[ "${security}" == "reality" ]]; then
         local reality_sni reality_fp reality_pbk reality_sid
-        reality_sni="$(jq -r '.reality.server_name // .sni // .server' <<<"${stack_json}")"
+        reality_sni="$(jq -r '.reality.server_name // ((.reality.dest // "") | split(":")[0]) // "www.microsoft.com"' <<<"${stack_json}")"
         reality_fp="$(jq -r '.reality.fingerprint // .fingerprint // "chrome"' <<<"${stack_json}")"
         reality_pbk="$(jq -r '.reality.public_key // ""' <<<"${stack_json}")"
         reality_sid="$(jq -r '.reality.short_id // ""' <<<"${stack_json}")"
@@ -426,13 +454,17 @@ ps_sub_export_xray_client_config() {
     transport="$(jq -r '.transport // "tcp"' <<<"${stack}")"
     sni="$(jq -r '.sni // .server' <<<"${stack}")"
     fingerprint="$(jq -r '.fingerprint // "chrome"' <<<"${stack}")"
-    reality_server_name="$(jq -r '.reality.server_name // .sni // .server' <<<"${stack}")"
+    reality_server_name="$(jq -r '.reality.server_name // ((.reality.dest // "") | split(":")[0]) // "www.microsoft.com"' <<<"${stack}")"
     reality_fingerprint="$(jq -r '.reality.fingerprint // .fingerprint // "chrome"' <<<"${stack}")"
     reality_public_key="$(jq -r '.reality.public_key // ""' <<<"${stack}")"
     reality_short_id="$(jq -r '.reality.short_id // ""' <<<"${stack}")"
     grpc_service="$(jq -r '.grpc.service_name // "grpc"' <<<"${stack}")"
     xhttp_path="$(jq -r '.xhttp.path // "/"' <<<"${stack}")"
     xhttp_host="$(jq -r '.xhttp.host // ""' <<<"${stack}")"
+
+    if [[ "${security}" == "reality" ]]; then
+      ps_sub_validate_vless_reality_stack "${stack}" || continue
+    fi
 
     out_file="${root}/xray/client-${stack_id}.json"
 
@@ -562,12 +594,16 @@ ps_sub_export_singbox_client_config() {
     transport="$(jq -r '.transport // "tcp"' <<<"${stack}")"
     sni="$(jq -r '.sni // .server' <<<"${stack}")"
     fingerprint="$(jq -r '.fingerprint // "chrome"' <<<"${stack}")"
-    reality_server_name="$(jq -r '.reality.server_name // .sni // .server' <<<"${stack}")"
+    reality_server_name="$(jq -r '.reality.server_name // ((.reality.dest // "") | split(":")[0]) // "www.microsoft.com"' <<<"${stack}")"
     reality_public_key="$(jq -r '.reality.public_key // ""' <<<"${stack}")"
     reality_short_id="$(jq -r '.reality.short_id // ""' <<<"${stack}")"
     grpc_service="$(jq -r '.grpc.service_name // "grpc"' <<<"${stack}")"
     xhttp_path="$(jq -r '.xhttp.path // "/"' <<<"${stack}")"
     xhttp_host="$(jq -r '.xhttp.host // ""' <<<"${stack}")"
+
+    if [[ "${security}" == "reality" ]]; then
+      ps_sub_validate_vless_reality_stack "${stack}" || continue
+    fi
 
     out_file="${root}/singbox/client-${stack_id}.json"
 

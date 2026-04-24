@@ -41,10 +41,29 @@ ps_render_record_engine_status() {
 
 ps_render_validate_reality_manifest_for_engine() {
   local engine="${1:-xray}"
-  local row stack_id stack_name private_key public_key short_id
+  local row stack_id stack_name private_key public_key short_id server_name dest
 
-  while IFS=$'\t' read -r stack_id stack_name private_key public_key short_id; do
+  while IFS=$'\t' read -r stack_id stack_name private_key public_key short_id server_name dest; do
     [[ -n "${stack_id}" ]] || continue
+
+    local effective_server_name effective_dest
+    effective_server_name="${server_name}"
+    if [[ -z "${effective_server_name}" && -n "${dest}" ]]; then
+      effective_server_name="${dest%%:*}"
+    fi
+    effective_dest="${dest}"
+    if [[ -z "${effective_dest}" && -n "${effective_server_name}" ]]; then
+      effective_dest="${effective_server_name}:443"
+    fi
+
+    if [[ -z "${effective_server_name}" ]]; then
+      printf "协议栈 %s（%s）REALITY server_name 为空。\n" "${stack_name}" "${stack_id}"
+      return 1
+    fi
+    if [[ ! "${effective_dest}" =~ ^[^:]+:[0-9]{1,5}$ ]]; then
+      printf "协议栈 %s（%s）REALITY dest 格式无效：%s\n" "${stack_name}" "${stack_id}" "${effective_dest}"
+      return 1
+    fi
 
     if ! ps_is_valid_reality_key "${private_key}"; then
       printf "协议栈 %s（%s）REALITY private_key 格式无效。\n" "${stack_name}" "${stack_id}"
@@ -68,7 +87,9 @@ ps_render_validate_reality_manifest_for_engine() {
           (.name // .stack_id),
           (.reality.private_key // ""),
           (.reality.public_key // ""),
-          (.reality.short_id // "")
+          (.reality.short_id // ""),
+          (.reality.server_name // ""),
+          (.reality.dest // "")
         ]
       | @tsv' \
       "${PS_MANIFEST}"
@@ -124,8 +145,8 @@ ps_render_xray_inbounds_json() {
                     {
                       realitySettings: {
                         show: false,
-                        dest: (.reality.dest // (.server + ":443")),
-                        serverNames: [(.reality.server_name // .server)],
+                        dest: (.reality.dest // ((.reality.server_name // "www.microsoft.com") + ":443")),
+                        serverNames: [(.reality.server_name // ((.reality.dest // "") | split(":")[0] // "www.microsoft.com"))],
                         privateKey: (.reality.private_key // ""),
                         shortIds: [(.reality.short_id // "")]
                       }
@@ -424,8 +445,8 @@ ps_render_singbox_inbounds_json() {
                     reality: {
                       enabled: true,
                       handshake: {
-                        server: ((.reality.dest // .server) | split(":")[0]),
-                        server_port: (((.reality.dest // (.server + ":443")) | split(":")[1] // "443") | tonumber)
+                        server: ((.reality.dest // ((.reality.server_name // "www.microsoft.com") + ":443")) | split(":")[0]),
+                        server_port: (((.reality.dest // ((.reality.server_name // "www.microsoft.com") + ":443")) | split(":")[1] // "443") | tonumber)
                       },
                       private_key: (.reality.private_key // ""),
                       short_id: [(.reality.short_id // "")]

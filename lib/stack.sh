@@ -78,6 +78,32 @@ ps_stack_list() {
   ' "${PS_MANIFEST}"
 }
 
+ps_stack_reality_default_server_name() {
+  local default_name
+  default_name="$(jq -r '.meta.reality_default_server_name // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+  if [[ -z "${default_name}" ]]; then
+    default_name="www.microsoft.com"
+  fi
+  printf "%s" "${default_name}"
+}
+
+ps_stack_parse_dest_port() {
+  local dest="${1:-}"
+  if [[ "${dest}" =~ :([0-9]{1,5})$ ]]; then
+    printf "%s" "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+ps_stack_reality_dest_is_valid() {
+  local dest="${1:-}"
+  [[ "${dest}" =~ ^[^:]+:[0-9]{1,5}$ ]] || return 1
+  local port
+  port="$(ps_stack_parse_dest_port "${dest}")" || return 1
+  ps_validate_port "${port}"
+}
+
 ps_stack_create() {
   ps_print_header "创建新协议栈"
   local preset_choice
@@ -160,6 +186,7 @@ ps_stack_create() {
     return 1
   fi
   if [[ "${stack_security}" == "tls" ]]; then
+    ps_log_info "当前服务类型为 TLS：需要可用证书。可自动签发（ACME）或手动安装。"
     tls_cert_mode="$(ps_prompt "TLS 证书模式（acme/manual）" "acme")"
     tls_acme_email=""
     if [[ "${tls_cert_mode}" == "acme" ]]; then
@@ -169,14 +196,23 @@ ps_stack_create() {
       ps_log_warn "sing-box 的 SS2022+TLS 兼容性因版本而异，渲染器会先校验再应用。"
     fi
   else
+    if [[ "${stack_security}" == "reality" ]]; then
+      ps_log_info "当前服务类型为 REALITY：默认不需要为你的节点域名申请 TLS 证书。"
+      ps_log_info "请单独设置 REALITY 握手目标（serverName），不要与节点对外地址混用。"
+    fi
     tls_cert_mode="none"
     tls_acme_email=""
   fi
 
   local client_sni="" client_fingerprint=""
   if [[ "${stack_protocol}" == "vless" ]]; then
-    client_sni="$(ps_prompt "客户端 SNI（用于分享链接/uTLS）" "${server}")"
-    client_fingerprint="$(ps_prompt "客户端指纹（chrome/firefox/safari/edge/randomized）" "chrome")"
+    if [[ "${stack_security}" == "tls" ]]; then
+      client_sni="$(ps_prompt "客户端 SNI（用于 TLS 分享链接/uTLS）" "${server}")"
+      client_fingerprint="$(ps_prompt "客户端指纹（chrome/firefox/safari/edge/randomized）" "chrome")"
+    else
+      client_sni=""
+      client_fingerprint="chrome"
+    fi
   fi
 
   local stack_id uuid
@@ -214,15 +250,54 @@ ps_stack_create() {
       return 1
     fi
 
+    local reality_server_name reality_dest reality_fingerprint default_reality_server_name
+    default_reality_server_name="$(ps_stack_reality_default_server_name)"
+    reality_server_name="$(ps_prompt "REALITY 握手目标 serverName（建议常见 HTTPS 域名）" "${default_reality_server_name}")"
+    if [[ -z "${reality_server_name}" ]]; then
+      ps_log_error "REALITY serverName 不能为空。"
+      return 1
+    fi
+    if [[ "${reality_server_name}" == "${server}" ]]; then
+      ps_log_warn "检测到 REALITY serverName 与节点对外地址相同（${server}）。这通常不是推荐设置。"
+      if ! ps_confirm "确认继续使用相同域名作为 REALITY serverName 吗？" "N"; then
+        ps_log_info "已取消，请重新创建并设置合适的 REALITY serverName。"
+        return 1
+      fi
+    fi
+
+    reality_dest="$(ps_prompt "REALITY 握手目标 dest（默认 serverName:443）" "${reality_server_name}:443")"
+    if ! ps_stack_reality_dest_is_valid "${reality_dest}"; then
+      ps_log_error "REALITY dest 格式无效：${reality_dest}（应为 host:port）"
+      return 1
+    fi
+
+    local reality_dest_port
+    reality_dest_port="$(ps_stack_parse_dest_port "${reality_dest}" || printf "443")"
+    if [[ "${port}" != "443" ]]; then
+      ps_log_warn "REALITY 服务监听端口为 ${port}（非 443），存在被网络策略拦截/封禁风险。"
+      if ! ps_confirm "仍然继续使用非 443 端口创建 REALITY 服务吗？" "N"; then
+        ps_log_info "已取消，请重新选择端口。"
+        return 1
+      fi
+    fi
+    if [[ "${reality_dest_port}" != "443" ]]; then
+      ps_log_warn "REALITY dest 端口为 ${reality_dest_port}（非 443），兼容性可能降低。"
+    fi
+
+    reality_fingerprint="$(ps_prompt "REALITY 客户端指纹（chrome/firefox/safari/edge/randomized）" "chrome")"
+    client_fingerprint="${reality_fingerprint}"
+
     reality_json="$(jq -n \
       --arg enabled true \
-      --arg sni "${server}" \
-      --arg dest "${server}:443" \
+      --arg sni "${reality_server_name}" \
+      --arg dest "${reality_dest}" \
       --arg private_key "${reality_private_key}" \
       --arg public_key "${reality_public_key}" \
       --arg short_id "${reality_short_id}" \
-      --arg fingerprint "chrome" \
+      --arg fingerprint "${reality_fingerprint}" \
       '{enabled:($enabled == "true"),server_name:$sni,dest:$dest,private_key:$private_key,public_key:$public_key,short_id:$short_id,fingerprint:$fingerprint}')"
+
+    ps_manifest_update --arg sni "${reality_server_name}" --arg ts "$(ps_now_iso)" '.meta.reality_default_server_name = $sni | .meta.updated_at = $ts'
   fi
 
   if [[ "${stack_protocol}" == "shadowsocks-2022" ]]; then

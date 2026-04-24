@@ -44,7 +44,7 @@ kprxy 安装器/控制台
   service-wizard             一键搭建（自动完成模板+入口绑定）
   export                     一键导出：客户端配置 + 初始化规则包（推荐给普通用户）
   doctor                     执行依赖预检
-  status                     查看运行状态（summary/engine/cert/conflict）
+  status                     查看运行状态（summary/engine/cert/conflict/reality）
   uninstall                  卸载 kprxy（默认保留数据，可选 --purge / --keep-data / --yes）
   cleanup                    清理临时与生成产物（可选 --yes）
   reset                      重置项目状态与配置（保留框架安装，可选 --yes）
@@ -611,6 +611,27 @@ ps_service_render_engine() {
   esac
 }
 
+ps_service_explain_protocol_certificate_behavior() {
+  local stack_id="${1:-}"
+  [[ -n "${stack_id}" ]] || return 0
+
+  local protocol security domain cert_mode
+  protocol="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .protocol // "vless"' "${PS_MANIFEST}")"
+  security="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .security // "none"' "${PS_MANIFEST}")"
+  domain="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | (.tls.domain // .server // "")' "${PS_MANIFEST}")"
+  cert_mode="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .tls_cert_mode // "none"' "${PS_MANIFEST}")"
+
+  if [[ "${security}" == "tls" ]]; then
+    ps_ui_info "服务类型：${protocol} + TLS，需要证书。域名：${domain:-未设置}，证书模式：${cert_mode}。"
+    return 0
+  fi
+
+  if [[ "${security}" == "reality" ]]; then
+    ps_ui_info "服务类型：${protocol} + REALITY，默认不要求为节点域名签发 TLS 证书。"
+    return 0
+  fi
+}
+
 ps_service_prepare_tls_material() {
   local stack_id="${1:-}"
   [[ -n "${stack_id}" ]] || return 1
@@ -665,6 +686,8 @@ ps_service_finalize_runtime() {
     ps_service_runtime_result 0 "私有内核安装失败"
     return 1
   fi
+
+  ps_service_explain_protocol_certificate_behavior "${stack_id}" || true
 
   if ! ps_service_prepare_tls_material "${stack_id}"; then
     ps_service_runtime_result 0 "TLS 证书未就绪"
@@ -1164,6 +1187,7 @@ ps_menu_logs_diagnostics() {
       "仅查看内核/进程状态" \
       "仅查看证书状态" \
       "仅查看冲突检测" \
+      "仅查看 VLESS-REALITY 诊断" \
       "查看安装日志" \
       "查看 Xray 服务日志" \
       "查看 sing-box 服务日志" \
@@ -1180,16 +1204,17 @@ ps_menu_logs_diagnostics() {
       2) ps_run_action ps_status_command engine ;;
       3) ps_run_action ps_status_command cert ;;
       4) ps_run_action ps_status_command conflict ;;
-      5) ps_run_action ps_diag_view_install_log ;;
-      6) ps_run_action ps_diag_view_xray_service_log ;;
-      7) ps_run_action ps_diag_view_singbox_service_log ;;
-      8) ps_run_action ps_diag_view_access_log ;;
-      9) ps_run_action ps_diag_view_error_log ;;
-      10) ps_run_action ps_diag_change_log_level ;;
-      11) ps_run_action ps_diag_toggle_dns_logging ;;
-      12) ps_run_action ps_diag_configure_log_rotation ;;
-      13) ps_run_action ps_diag_export_bundle ;;
-      14) ps_run_action ps_diag_tail_logs ;;
+      5) ps_run_action ps_status_command reality ;;
+      6) ps_run_action ps_diag_view_install_log ;;
+      7) ps_run_action ps_diag_view_xray_service_log ;;
+      8) ps_run_action ps_diag_view_singbox_service_log ;;
+      9) ps_run_action ps_diag_view_access_log ;;
+      10) ps_run_action ps_diag_view_error_log ;;
+      11) ps_run_action ps_diag_change_log_level ;;
+      12) ps_run_action ps_diag_toggle_dns_logging ;;
+      13) ps_run_action ps_diag_configure_log_rotation ;;
+      14) ps_run_action ps_diag_export_bundle ;;
+      15) ps_run_action ps_diag_tail_logs ;;
       0) break ;;
       *) ps_ui_warn "选择无效"; ps_pause ;;
     esac
