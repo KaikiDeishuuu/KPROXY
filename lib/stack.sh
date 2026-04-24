@@ -291,6 +291,7 @@ ps_stack_create() {
     while true; do
       if [[ "${port}" != "443" ]]; then
         ps_log_warn "REALITY 服务监听端口为 ${port}（非 443），存在被网络策略拦截/封禁风险。"
+        ps_log_warn "说明：这里检查的是你的服务监听端口（address:port），不是 REALITY 握手目标 serverName 的 443 端口。"
         if ! ps_confirm "仍然继续使用非 443 端口创建 REALITY 服务吗？" "N"; then
           ps_log_info "已取消当前端口，请重新选择。"
           port="$(ps_prompt_for_port "服务监听端口（建议 443，直接回车=随机可用端口）")"

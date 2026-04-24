@@ -533,12 +533,31 @@ ps_service_stack_engine() {
 
 PS_SERVICE_WIZARD_RUNTIME_OK=0
 PS_SERVICE_WIZARD_RUNTIME_MESSAGE=""
+PS_LAST_CREATED_STACK_ID=""
 
 ps_service_runtime_result() {
   local ok="${1:-0}"
   local message="${2:-}"
   PS_SERVICE_WIZARD_RUNTIME_OK="${ok}"
   PS_SERVICE_WIZARD_RUNTIME_MESSAGE="${message}"
+}
+
+ps_service_print_stack_share_link() {
+  local stack_id="${1:-}"
+  [[ -n "${stack_id}" ]] || return 1
+
+  local stack_json link
+  stack_json="$(jq -c --arg sid "${stack_id}" '.stacks[]? | select(.stack_id == $sid)' "${PS_MANIFEST}" 2>/dev/null || true)"
+  [[ -n "${stack_json}" ]] || return 1
+
+  link="$(ps_sub_stack_link_from_json "${stack_json}" 2>/dev/null || true)"
+  if [[ -z "${link}" ]]; then
+    ps_ui_warn "未能生成该服务的分享链接，请前往“订阅与导出”手动生成。"
+    return 1
+  fi
+
+  printf "\n分享链接\n%s\n" "${link}"
+  return 0
 }
 
 ps_service_ensure_engine_binary() {
@@ -778,6 +797,7 @@ ps_service_wizard() {
   ps_print_header "一步式创建服务"
   ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
   ps_service_runtime_result 0 ""
+  PS_LAST_CREATED_STACK_ID=""
 
   # REALITY key generation requires xray x25519. Ensure xray is available
   # before ps_stack_create runs, so the keypair step does not fail on fresh
@@ -811,6 +831,7 @@ ps_service_wizard() {
     new_stack_id="$(jq -r '.stacks | sort_by(.created_at // "") | last.stack_id // empty' "${PS_MANIFEST}")"
   fi
   [[ -n "${new_stack_id}" ]] || return 1
+  PS_LAST_CREATED_STACK_ID="${new_stack_id}"
 
   local stack_protocol stack_port
   stack_protocol="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .protocol // "vless"' "${PS_MANIFEST}")"
@@ -856,6 +877,7 @@ ps_action_create_service() {
   if [[ -n "${stack_info}" ]]; then printf "\n创建完成\n%s\n" "${stack_info}"; fi
   if [[ "${PS_SERVICE_WIZARD_RUNTIME_OK:-0}" == "1" ]]; then
     printf "状态：已生成并启用（含自动入口绑定）\n"
+    ps_service_print_stack_share_link "${PS_LAST_CREATED_STACK_ID:-}" || true
     ps_show_next_steps \
       "前往“订阅与导出”生成客户端配置" \
       "前往“运行状态与诊断”检查监听与配置状态"
