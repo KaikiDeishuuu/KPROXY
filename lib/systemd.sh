@@ -40,13 +40,17 @@ ps_systemd_service_exists() {
 ps_systemd_active_state() {
   local service="${1}"
   ps_systemd_is_available || { printf "unknown"; return 1; }
-  systemctl is-active "${service}" 2>/dev/null || printf "inactive"
+  local state
+  state="$(systemctl is-active "${service}" 2>/dev/null || true)"
+  printf "%s" "${state:-inactive}"
 }
 
 ps_systemd_enabled_state() {
   local service="${1}"
   ps_systemd_is_available || { printf "unknown"; return 1; }
-  systemctl is-enabled "${service}" 2>/dev/null || printf "disabled"
+  local state
+  state="$(systemctl is-enabled "${service}" 2>/dev/null || true)"
+  printf "%s" "${state:-disabled}"
 }
 
 ps_systemd_install_units() {
