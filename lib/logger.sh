@@ -47,7 +47,9 @@ ps_log() {
 
   local line="[${now}] [${level^^}] ${message}"
   printf "%s\n" "${line}"
-  printf "%s\n" "${line}" >>"${PS_INSTALL_LOG}"
+  mkdir -p "$(dirname "${PS_INSTALL_LOG}")" 2>/dev/null || true
+  touch "${PS_INSTALL_LOG}" 2>/dev/null || true
+  printf "%s\n" "${line}" >>"${PS_INSTALL_LOG}" 2>/dev/null || true
 }
 
 ps_log_debug() { ps_log debug "$*"; }

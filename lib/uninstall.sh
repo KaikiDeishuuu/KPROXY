@@ -311,28 +311,28 @@ ps_lifecycle_print_summary() {
 
   printf "\n删除项：\n"
   if [[ "${#PS_LIFECYCLE_REMOVED[@]}" -eq 0 ]]; then
-    printf "- 无\n"
+    printf -- "- 无\n"
   else
     for item in "${PS_LIFECYCLE_REMOVED[@]}"; do
-      printf "- %s\n" "${item}"
+      printf -- "- %s\n" "${item}"
     done
   fi
 
   printf "\n保留项：\n"
   if [[ "${#PS_LIFECYCLE_PRESERVED[@]}" -eq 0 ]]; then
-    printf "- 无\n"
+    printf -- "- 无\n"
   else
     for item in "${PS_LIFECYCLE_PRESERVED[@]}"; do
-      printf "- %s\n" "${item}"
+      printf -- "- %s\n" "${item}"
     done
   fi
 
   printf "\n跳过项：\n"
   if [[ "${#PS_LIFECYCLE_SKIPPED[@]}" -eq 0 ]]; then
-    printf "- 无\n"
+    printf -- "- 无\n"
   else
     for item in "${PS_LIFECYCLE_SKIPPED[@]}"; do
-      printf "- %s\n" "${item}"
+      printf -- "- %s\n" "${item}"
     done
   fi
 }
