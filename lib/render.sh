@@ -11,6 +11,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
 # shellcheck source=lib/crypto.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
+# shellcheck source=lib/systemd.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/systemd.sh"
+
+PS_RUNTIME_VERIFY_LAST_MESSAGE=""
 
 ps_render_record_engine_status() {
   local engine="${1}"
@@ -718,6 +722,164 @@ ps_render_singbox_config() {
   ps_atomic_replace_file "${candidate}" "${config_path}"
   ps_render_record_engine_status singbox true "渲染成功"
   ps_log_success "sing-box 配置已渲染：${config_path}"
+}
+
+ps_runtime_record_engine_status() {
+  local engine="${1}"
+  local ok="${2}"
+  local message="${3:-}"
+  local ok_bool="false"
+  if [[ "${ok}" == "true" ]]; then
+    ok_bool="true"
+  fi
+
+  ps_manifest_update \
+    --arg e "${engine}" \
+    --argjson ok "${ok_bool}" \
+    --arg msg "${message}" \
+    --arg ts "$(ps_now_iso)" \
+    '
+      .status.runtime[$e] = ((.status.runtime[$e] // {})
+        + {ok:$ok, message:$msg, checked_at:$ts})
+      | if $ok then
+          .status.runtime[$e].last_success_at = $ts
+          | .status.runtime[$e].last_success_message = $msg
+        else
+          .status.runtime[$e].last_failure_at = $ts
+          | .status.runtime[$e].last_failure_message = $msg
+        end
+      | .meta.updated_at = $ts
+    '
+}
+
+ps_runtime_verify_xray_config_alignment() {
+  local config_path expected_inbounds_json expected_outbounds_json expected_routes_json
+  local -a missing_inbounds=() missing_outbounds=() missing_route_outbounds=() invalid_route_ref_outbounds=() invalid_route_ref_inbounds=()
+  local expected_route_count actual_route_count
+  local tag outbound
+
+  config_path="$(ps_engine_config_path xray)"
+  if [[ ! -f "${config_path}" ]]; then
+    PS_RUNTIME_VERIFY_LAST_MESSAGE="Xray 运行配置不存在：${config_path}"
+    return 1
+  fi
+  if ! jq . "${config_path}" >/dev/null 2>&1; then
+    PS_RUNTIME_VERIFY_LAST_MESSAGE="Xray 运行配置 JSON 无效：${config_path}"
+    return 1
+  fi
+
+  expected_inbounds_json="$(ps_render_xray_inbounds_json)"
+  expected_outbounds_json="$(ps_render_xray_outbounds_json)"
+  expected_routes_json="$(ps_render_xray_routes_json)"
+  expected_route_count="$(jq 'length' <<<"${expected_routes_json}")"
+  actual_route_count="$(jq '.routing.rules | length' "${config_path}" 2>/dev/null || printf "0")"
+
+  while IFS= read -r tag; do
+    [[ -n "${tag}" ]] || continue
+    if ! jq -e --arg tag "${tag}" '.inbounds[]? | select(.tag == $tag)' "${config_path}" >/dev/null 2>&1; then
+      missing_inbounds+=("${tag}")
+    fi
+  done < <(jq -r '.[]?.tag // empty' <<<"${expected_inbounds_json}")
+
+  while IFS= read -r tag; do
+    [[ -n "${tag}" ]] || continue
+    if ! jq -e --arg tag "${tag}" '.outbounds[]? | select(.tag == $tag)' "${config_path}" >/dev/null 2>&1; then
+      missing_outbounds+=("${tag}")
+    fi
+  done < <(jq -r '.[]?.tag // empty' <<<"${expected_outbounds_json}")
+
+  while IFS= read -r outbound; do
+    [[ -n "${outbound}" ]] || continue
+    if ! jq -e --arg tag "${outbound}" '.routing.rules[]? | select(.outboundTag == $tag)' "${config_path}" >/dev/null 2>&1; then
+      missing_route_outbounds+=("${outbound}")
+    fi
+  done < <(jq -r '.[].outboundTag // empty' <<<"${expected_routes_json}" | sort -u)
+
+  while IFS= read -r outbound; do
+    [[ -n "${outbound}" ]] || continue
+    if ! jq -e --arg tag "${outbound}" '.outbounds[]? | select(.tag == $tag)' "${config_path}" >/dev/null 2>&1; then
+      invalid_route_ref_outbounds+=("${outbound}")
+    fi
+  done < <(jq -r '.routing.rules[]?.outboundTag // empty' "${config_path}" 2>/dev/null | sort -u)
+
+  while IFS= read -r tag; do
+    [[ -n "${tag}" ]] || continue
+    if ! jq -e --arg tag "${tag}" '.inbounds[]? | select(.tag == $tag)' "${config_path}" >/dev/null 2>&1; then
+      invalid_route_ref_inbounds+=("${tag}")
+    fi
+  done < <(jq -r '.routing.rules[]?.inboundTag[]? // empty' "${config_path}" 2>/dev/null | sort -u)
+
+  if [[ "${#missing_inbounds[@]}" -gt 0 || "${#missing_outbounds[@]}" -gt 0 || "${#missing_route_outbounds[@]}" -gt 0 || "${#invalid_route_ref_outbounds[@]}" -gt 0 || "${#invalid_route_ref_inbounds[@]}" -gt 0 || "${expected_route_count}" != "${actual_route_count}" ]]; then
+    PS_RUNTIME_VERIFY_LAST_MESSAGE="Xray 运行配置与状态不一致"
+    if [[ "${#missing_inbounds[@]}" -gt 0 ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；缺失入站=$(IFS=,; echo "${missing_inbounds[*]}")"
+    fi
+    if [[ "${#missing_outbounds[@]}" -gt 0 ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；缺失出站=$(IFS=,; echo "${missing_outbounds[*]}")"
+    fi
+    if [[ "${#missing_route_outbounds[@]}" -gt 0 ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；缺失路由出口=$(IFS=,; echo "${missing_route_outbounds[*]}")"
+    fi
+    if [[ "${#invalid_route_ref_outbounds[@]}" -gt 0 ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；路由引用不存在的出口=$(IFS=,; echo "${invalid_route_ref_outbounds[*]}")"
+    fi
+    if [[ "${#invalid_route_ref_inbounds[@]}" -gt 0 ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；路由引用不存在的入口=$(IFS=,; echo "${invalid_route_ref_inbounds[*]}")"
+    fi
+    if [[ "${expected_route_count}" != "${actual_route_count}" ]]; then
+      PS_RUNTIME_VERIFY_LAST_MESSAGE+="；路由条数 state=${expected_route_count} runtime=${actual_route_count}"
+    fi
+    return 1
+  fi
+
+  PS_RUNTIME_VERIFY_LAST_MESSAGE="Xray 已同步（入站=$(jq 'length' <<<"${expected_inbounds_json}")，出站=$(jq 'length' <<<"${expected_outbounds_json}")，路由=${expected_route_count}）"
+  return 0
+}
+
+ps_runtime_sync_after_state_change() {
+  local reason="${1:-状态变更}"
+  local service restarted_any restart_failed
+  restarted_any=0
+  restart_failed=0
+
+  ps_log_info "检测到${reason}，正在渲染并应用运行配置..."
+  if ! ps_render_all; then
+    ps_runtime_record_engine_status xray false "渲染失败，未完成应用"
+    ps_runtime_record_engine_status singbox false "渲染失败，未完成应用"
+    return 1
+  fi
+
+  if ps_systemd_is_available && ps_is_root; then
+    for service in "$(ps_engine_service_name xray)" "$(ps_engine_service_name singbox)"; do
+      if ! ps_systemd_service_exists "${service}"; then
+        continue
+      fi
+      restarted_any=1
+      if ! ps_systemd_service_action restart "${service}"; then
+        ps_log_warn "重启服务失败：${service}.service"
+        restart_failed=1
+      fi
+    done
+    if [[ "${restarted_any}" -eq 0 ]]; then
+      ps_log_warn "未检测到 kprxy 的 systemd 服务，已仅完成渲染。"
+    fi
+  else
+    ps_log_warn "当前未通过 systemd 自动应用（可能是非 root 或无 systemctl），已仅完成渲染。"
+  fi
+
+  if ! ps_runtime_verify_xray_config_alignment; then
+    ps_runtime_record_engine_status xray false "${PS_RUNTIME_VERIFY_LAST_MESSAGE}"
+    ps_log_error "${PS_RUNTIME_VERIFY_LAST_MESSAGE}"
+    return 1
+  fi
+  ps_runtime_record_engine_status xray true "${PS_RUNTIME_VERIFY_LAST_MESSAGE}"
+  ps_runtime_record_engine_status singbox true "已完成渲染$(if [[ "${restart_failed}" -eq 0 ]]; then printf "并尝试应用"; else printf "（部分服务重启失败）"; fi)"
+  ps_log_success "${PS_RUNTIME_VERIFY_LAST_MESSAGE}"
+
+  if [[ "${restart_failed}" -ne 0 ]]; then
+    return 1
+  fi
+  return 0
 }
 
 ps_render_all() {

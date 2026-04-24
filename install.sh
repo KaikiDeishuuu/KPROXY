@@ -500,6 +500,17 @@ ps_run_action() {
 
   if ! "${action}" "$@"; then
     ps_ui_error "操作失败： ${action}"
+    ps_pause
+    return 1
+  fi
+
+  if ps_action_requires_runtime_sync "${action}"; then
+    if ! ps_runtime_sync_after_state_change "变更操作：${action}"; then
+      ps_ui_error "操作已写入状态，但未完整应用到运行配置：${action}"
+      ps_ui_warn "可在“运行状态与诊断 -> 查看完整运行状态”确认未应用项。"
+      ps_pause
+      return 1
+    fi
   fi
 
   if [[ "${PS_SESSION_TERMINATE_AFTER_ACTION:-0}" == "1" ]]; then
@@ -513,6 +524,22 @@ ps_run_action() {
   fi
 
   ps_pause
+}
+
+ps_action_requires_runtime_sync() {
+  local action="${1:-}"
+  case "${action}" in
+    ps_inbound_create_public|ps_inbound_create_local|ps_inbound_edit|ps_inbound_delete|ps_inbound_bind_stack|\
+    ps_outbound_create|ps_outbound_edit|ps_outbound_delete|\
+    ps_route_create_rule|ps_route_edit_rule|ps_route_toggle_rule|ps_route_delete_rule|ps_route_move_up|ps_route_move_down|ps_route_reorder_priority|\
+    ps_forward_create|ps_forward_edit|ps_forward_toggle|ps_forward_delete|\
+    ps_stack_edit|ps_stack_delete|ps_stack_toggle|ps_stack_rerender)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 ps_show_next_steps() {

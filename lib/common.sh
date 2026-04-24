@@ -293,8 +293,11 @@ JSON
   ps_manifest_update '
     .status = (.status // {})
     | .status.render = (.status.render // {})
+    | .status.runtime = (.status.runtime // {})
     | .status.render.xray = (.status.render.xray // {ok:false,message:"",checked_at:""})
     | .status.render.singbox = (.status.render.singbox // {ok:false,message:"",checked_at:""})
+    | .status.runtime.xray = (.status.runtime.xray // {ok:false,message:"",checked_at:""})
+    | .status.runtime.singbox = (.status.runtime.singbox // {ok:false,message:"",checked_at:""})
     | .status.render.xray.last_success_at = (.status.render.xray.last_success_at // (if (.status.render.xray.ok // false) == true then (.status.render.xray.checked_at // "") else "" end))
     | .status.render.singbox.last_success_at = (.status.render.singbox.last_success_at // (if (.status.render.singbox.ok // false) == true then (.status.render.singbox.checked_at // "") else "" end))
     | .status.render.xray.last_success_message = (.status.render.xray.last_success_message // (if (.status.render.xray.ok // false) == true then (.status.render.xray.message // "") else "" end))
@@ -303,6 +306,14 @@ JSON
     | .status.render.singbox.last_failure_at = (.status.render.singbox.last_failure_at // (if (.status.render.singbox.ok // false) == false then (.status.render.singbox.checked_at // "") else "" end))
     | .status.render.xray.last_failure_message = (.status.render.xray.last_failure_message // (if (.status.render.xray.ok // false) == false then (.status.render.xray.message // "") else "" end))
     | .status.render.singbox.last_failure_message = (.status.render.singbox.last_failure_message // (if (.status.render.singbox.ok // false) == false then (.status.render.singbox.message // "") else "" end))
+    | .status.runtime.xray.last_success_at = (.status.runtime.xray.last_success_at // (if (.status.runtime.xray.ok // false) == true then (.status.runtime.xray.checked_at // "") else "" end))
+    | .status.runtime.singbox.last_success_at = (.status.runtime.singbox.last_success_at // (if (.status.runtime.singbox.ok // false) == true then (.status.runtime.singbox.checked_at // "") else "" end))
+    | .status.runtime.xray.last_success_message = (.status.runtime.xray.last_success_message // (if (.status.runtime.xray.ok // false) == true then (.status.runtime.xray.message // "") else "" end))
+    | .status.runtime.singbox.last_success_message = (.status.runtime.singbox.last_success_message // (if (.status.runtime.singbox.ok // false) == true then (.status.runtime.singbox.message // "") else "" end))
+    | .status.runtime.xray.last_failure_at = (.status.runtime.xray.last_failure_at // (if (.status.runtime.xray.ok // false) == false then (.status.runtime.xray.checked_at // "") else "" end))
+    | .status.runtime.singbox.last_failure_at = (.status.runtime.singbox.last_failure_at // (if (.status.runtime.singbox.ok // false) == false then (.status.runtime.singbox.checked_at // "") else "" end))
+    | .status.runtime.xray.last_failure_message = (.status.runtime.xray.last_failure_message // (if (.status.runtime.xray.ok // false) == false then (.status.runtime.xray.message // "") else "" end))
+    | .status.runtime.singbox.last_failure_message = (.status.runtime.singbox.last_failure_message // (if (.status.runtime.singbox.ok // false) == false then (.status.runtime.singbox.message // "") else "" end))
   '
   ps_manifest_update --arg install "${PS_LOG_DIR}/install.log" --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" --arg sb "${PS_LOG_DIR}/singbox.log" '.logs.install_log = $install | .logs.xray_access = $xa | .logs.xray_error = $xe | .logs.singbox_log = $sb'
   ps_manifest_update --arg xbin "${PS_XRAY_BIN}" --arg sbin "${PS_SINGBOX_BIN}" --arg xcfg "${PS_XRAY_CONFIG}" --arg scfg "${PS_SINGBOX_CONFIG}" --arg xsvc "${PS_XRAY_SERVICE}" --arg ssvc "${PS_SINGBOX_SERVICE}" '.engines.xray.binary = $xbin | .engines.xray.config_path = $xcfg | .engines.xray.service = $xsvc | .engines.singbox.binary = $sbin | .engines.singbox.config_path = $scfg | .engines.singbox.service = $ssvc'

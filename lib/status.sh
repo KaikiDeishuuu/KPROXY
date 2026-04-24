@@ -515,10 +515,139 @@ ps_status_unapplied_stacks_for_engine() {
     ' "${PS_MANIFEST}" 2>/dev/null || true
 }
 
+ps_status_xray_runtime_missing_outbounds() {
+  local cfg expected_json missing=()
+  cfg="$(ps_engine_config_path xray)"
+  [[ -f "${cfg}" ]] || { printf "运行配置不存在"; return 0; }
+  if ! jq . "${cfg}" >/dev/null 2>&1; then
+    printf "运行配置无效"
+    return 0
+  fi
+
+  expected_json="$(jq -c '
+    [
+      .outbounds[]?
+      | select(.enabled != false)
+      | .tag
+    ]
+  ' "${PS_MANIFEST}" 2>/dev/null || printf '[]')"
+
+  local tag
+  while IFS= read -r tag; do
+    [[ -n "${tag}" ]] || continue
+    if ! jq -e --arg t "${tag}" '.outbounds[]? | select(.tag == $t)' "${cfg}" >/dev/null 2>&1; then
+      missing+=("${tag}")
+    fi
+  done < <(jq -r '.[]?' <<<"${expected_json}")
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    printf "无"
+  else
+    printf "%s" "$(IFS='，'; echo "${missing[*]}")"
+  fi
+}
+
+ps_status_xray_runtime_route_count_diff() {
+  local cfg expected actual
+  cfg="$(ps_engine_config_path xray)"
+  [[ -f "${cfg}" ]] || { printf "state=- runtime=-"; return 0; }
+  expected="$(jq -r '
+    . as $root
+    | [
+        .routes[]?
+        | select(.enabled != false)
+        | (.inbound_tag // []) as $raw_tags
+        | (
+            [
+              $raw_tags[]? as $t
+              | (
+                  [($root.inbounds[]?.tag | select(. == $t))]
+                  + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+                ) as $mapped
+              | if ($mapped | length) > 0 then
+                  ($mapped[] | select(. != null and . != ""))
+                else
+                  $t
+                end
+            ]
+            | unique
+          ) as $expanded_inbound_tags
+        | {
+            inboundTag: $expanded_inbound_tags,
+            domain: (([.domain_suffix[]? | "domain:" + .] + [.domain_keyword[]? | "keyword:" + .])),
+            ip: (.ip_cidr // []),
+            network: ((.network // []) | map(ascii_downcase) | join(","))
+          }
+        | with_entries(select(.value != [] and .value != "" and .value != null))
+        | select((has("inboundTag")) or (has("domain")) or (has("ip")) or (has("network")))
+      ]
+    | length
+  ' "${PS_MANIFEST}" 2>/dev/null || printf "0")"
+  actual="$(jq -r '.routing.rules | length' "${cfg}" 2>/dev/null || printf "0")"
+  printf "state=%s runtime=%s" "${expected}" "${actual}"
+}
+
+ps_status_xray_routes_missing_runtime_outbound() {
+  local cfg missing=()
+  cfg="$(ps_engine_config_path xray)"
+  [[ -f "${cfg}" ]] || { printf "运行配置不存在"; return 0; }
+  if ! jq . "${cfg}" >/dev/null 2>&1; then
+    printf "运行配置无效"
+    return 0
+  fi
+
+  local outbound
+  while IFS= read -r outbound; do
+    [[ -n "${outbound}" ]] || continue
+    if ! jq -e --arg t "${outbound}" '.routing.rules[]? | select(.outboundTag == $t)' "${cfg}" >/dev/null 2>&1; then
+      missing+=("${outbound}")
+    fi
+  done < <(jq -r '
+    . as $root
+    | [
+        .routes[]?
+        | select(.enabled != false)
+        | (.inbound_tag // []) as $raw_tags
+        | (
+            [
+              $raw_tags[]? as $t
+              | (
+                  [($root.inbounds[]?.tag | select(. == $t))]
+                  + [($root.stacks[]? | select(.stack_id == $t or .name == $t) | ("stack-" + .stack_id))]
+                ) as $mapped
+              | if ($mapped | length) > 0 then
+                  ($mapped[] | select(. != null and . != ""))
+                else
+                  $t
+                end
+            ]
+            | unique
+          ) as $expanded_inbound_tags
+        | {
+            outboundTag: .outbound,
+            inboundTag: $expanded_inbound_tags,
+            domain: (([.domain_suffix[]? | "domain:" + .] + [.domain_keyword[]? | "keyword:" + .])),
+            ip: (.ip_cidr // []),
+            network: ((.network // []) | map(ascii_downcase) | join(","))
+          }
+        | with_entries(select(.value != [] and .value != "" and .value != null))
+        | select((has("inboundTag")) or (has("domain")) or (has("ip")) or (has("network")))
+      ]
+    | .[]?.outboundTag
+  ' "${PS_MANIFEST}" 2>/dev/null | sort -u)
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    printf "无"
+  else
+    printf "%s" "$(IFS='，'; echo "${missing[*]}")"
+  fi
+}
+
 ps_status_apply_section() {
   ps_status_section "应用状态"
 
   local engine label saved_count render_ok render_msg render_checked
+  local runtime_ok runtime_msg runtime_checked
   local last_success_at last_failure_at last_failure_msg
   for engine in xray singbox; do
     label="Xray"
@@ -528,6 +657,9 @@ ps_status_apply_section() {
     render_ok="$(jq -r --arg e "${engine}" '.status.render[$e].ok // false' "${PS_MANIFEST}" 2>/dev/null || printf 'false')"
     render_msg="$(jq -r --arg e "${engine}" '.status.render[$e].message // "无记录"' "${PS_MANIFEST}" 2>/dev/null || printf '无记录')"
     render_checked="$(jq -r --arg e "${engine}" '.status.render[$e].checked_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+    runtime_ok="$(jq -r --arg e "${engine}" '.status.runtime[$e].ok // false' "${PS_MANIFEST}" 2>/dev/null || printf 'false')"
+    runtime_msg="$(jq -r --arg e "${engine}" '.status.runtime[$e].message // "无记录"' "${PS_MANIFEST}" 2>/dev/null || printf '无记录')"
+    runtime_checked="$(jq -r --arg e "${engine}" '.status.runtime[$e].checked_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
     last_success_at="$(jq -r --arg e "${engine}" '.status.render[$e].last_success_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
     last_failure_at="$(jq -r --arg e "${engine}" '.status.render[$e].last_failure_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
     last_failure_msg="$(jq -r --arg e "${engine}" '.status.render[$e].last_failure_message // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
@@ -544,6 +676,9 @@ ps_status_apply_section() {
     printf "  最近渲染尝试：%s（ok=%s）" "${render_msg}" "${render_ok}"
     [[ -n "${render_checked}" ]] && printf "（时间=%s）" "${render_checked}"
     printf "\n"
+    printf "  运行态一致性：%s（ok=%s）" "${runtime_msg}" "${runtime_ok}"
+    [[ -n "${runtime_checked}" ]] && printf "（时间=%s）" "${runtime_checked}"
+    printf "\n"
     if [[ -n "${last_success_at}" ]]; then
       printf "  最近成功应用：%s\n" "${last_success_at}"
     else
@@ -555,6 +690,11 @@ ps_status_apply_section() {
       printf "\n"
     fi
     printf "  未应用服务：%s\n" "${unapplied_text}"
+    if [[ "${engine}" == "xray" ]]; then
+      printf "  state 存在但 runtime 缺失的上游：%s\n" "$(ps_status_xray_runtime_missing_outbounds)"
+      printf "  state 路由未进入 runtime（按出口）：%s\n" "$(ps_status_xray_routes_missing_runtime_outbound)"
+      printf "  路由条数对比：%s\n" "$(ps_status_xray_runtime_route_count_diff)"
+    fi
   done
 }
 
