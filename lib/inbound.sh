@@ -18,10 +18,10 @@ ps_inbound_pick_tag() {
   fi
 
   local i=1 row
-  printf "\n"
+  printf "\n" >&2
   for row in "${rows[@]}"; do
     IFS='|' read -r tag type endpoint enabled <<<"${row}"
-    printf "%d) %s type=%s endpoint=%s 启用=%s\n" "${i}" "${tag}" "${type}" "${endpoint}" "${enabled}"
+    printf "%d) %s type=%s endpoint=%s 启用=%s\n" "${i}" "${tag}" "${type}" "${endpoint}" "${enabled}" >&2
     i=$((i + 1))
   done
 

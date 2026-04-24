@@ -323,6 +323,73 @@ ps_status_config_section() {
   done
 }
 
+ps_status_unapplied_stacks_for_engine() {
+  local engine="${1:-xray}"
+  jq -r \
+    --arg e "${engine}" \
+    '
+      (.status.render[$e].last_success_at // "") as $success_at
+      | [
+          .stacks[]?
+          | select(.enabled == true and .engine == $e)
+        ] as $enabled
+      | if $success_at == "" then
+          $enabled
+        else
+          [
+            $enabled[]
+            | select((.updated_at // .created_at // "") > $success_at)
+          ]
+        end
+      | map(.name // .stack_id)
+      | unique
+      | .[]
+    ' "${PS_MANIFEST}" 2>/dev/null || true
+}
+
+ps_status_apply_section() {
+  ps_status_section "应用状态"
+
+  local engine label saved_count render_ok render_msg render_checked
+  local last_success_at last_failure_at last_failure_msg
+  for engine in xray singbox; do
+    label="Xray"
+    [[ "${engine}" == "singbox" ]] && label="sing-box"
+
+    saved_count="$(jq -r --arg e "${engine}" '[.stacks[]? | select(.enabled == true and .engine == $e)] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+    render_ok="$(jq -r --arg e "${engine}" '.status.render[$e].ok // false' "${PS_MANIFEST}" 2>/dev/null || printf 'false')"
+    render_msg="$(jq -r --arg e "${engine}" '.status.render[$e].message // "无记录"' "${PS_MANIFEST}" 2>/dev/null || printf '无记录')"
+    render_checked="$(jq -r --arg e "${engine}" '.status.render[$e].checked_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+    last_success_at="$(jq -r --arg e "${engine}" '.status.render[$e].last_success_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+    last_failure_at="$(jq -r --arg e "${engine}" '.status.render[$e].last_failure_at // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+    last_failure_msg="$(jq -r --arg e "${engine}" '.status.render[$e].last_failure_message // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+
+    mapfile -t unapplied < <(ps_status_unapplied_stacks_for_engine "${engine}")
+    local unapplied_text="无"
+    if [[ "${#unapplied[@]}" -gt 0 ]]; then
+      unapplied_text="$(IFS='，'; echo "${unapplied[*]}")"
+    fi
+
+    printf -- "- %s\n" "${label}"
+    printf "  当前运行配置：%s\n" "$(ps_engine_config_path "${engine}")"
+    printf "  已保存服务定义：%s\n" "${saved_count}"
+    printf "  最近渲染尝试：%s（ok=%s）" "${render_msg}" "${render_ok}"
+    [[ -n "${render_checked}" ]] && printf "（时间=%s）" "${render_checked}"
+    printf "\n"
+    if [[ -n "${last_success_at}" ]]; then
+      printf "  最近成功应用：%s\n" "${last_success_at}"
+    else
+      printf "  最近成功应用：无记录\n"
+    fi
+    if [[ -n "${last_failure_at}" ]]; then
+      printf "  最近渲染失败：%s" "${last_failure_at}"
+      [[ -n "${last_failure_msg}" ]] && printf "（%s）" "${last_failure_msg}"
+      printf "\n"
+    fi
+    printf "  未应用服务：%s\n" "${unapplied_text}"
+  done
+}
+
 ps_status_systemd_section() {
   ps_status_section "systemd 状态"
 
@@ -423,28 +490,72 @@ ps_status_detect_3xui() {
   local detected=0
   local evidence=()
 
-  if [[ -d /etc/x-ui || -d /usr/local/x-ui || -d /etc/3x-ui ]]; then
-    detected=1
-    [[ -d /etc/x-ui ]] && evidence+=("目录:/etc/x-ui")
-    [[ -d /usr/local/x-ui ]] && evidence+=("目录:/usr/local/x-ui")
-    [[ -d /etc/3x-ui ]] && evidence+=("目录:/etc/3x-ui")
-  fi
+  local probe_paths=(
+    /etc/x-ui
+    /etc/3x-ui
+    /usr/local/x-ui
+    /usr/local/3x-ui
+    /opt/x-ui
+    /opt/3x-ui
+    /usr/local/etc/x-ui
+    /usr/local/etc/3x-ui
+    /usr/local/bin/x-ui
+    /usr/local/bin/3x-ui
+    /usr/bin/x-ui
+    /usr/bin/3x-ui
+    /etc/x-ui/x-ui.db
+    /etc/3x-ui/x-ui.db
+    /usr/local/x-ui/x-ui.db
+    /usr/local/etc/x-ui/x-ui.db
+  )
+
+  local p
+  for p in "${probe_paths[@]}"; do
+    if [[ -e "${p}" ]]; then
+      detected=1
+      evidence+=("路径:${p}")
+    fi
+  done
 
   if ps_systemd_is_available; then
-    if ps_systemd_service_exists x-ui || ps_systemd_service_exists 3x-ui; then
+    local unit
+    while read -r unit; do
+      [[ -n "${unit}" ]] || continue
       detected=1
-      ps_systemd_service_exists x-ui && evidence+=("服务:x-ui.service")
-      ps_systemd_service_exists 3x-ui && evidence+=("服务:3x-ui.service")
-    fi
+      evidence+=("服务:${unit}")
+    done < <(
+      systemctl list-unit-files --type=service --no-legend 2>/dev/null \
+        | awk '{print $1}' \
+        | grep -E '^(x-ui|3x-ui)(@.*)?\.service$' || true
+    )
+
+    while read -r unit; do
+      [[ -n "${unit}" ]] || continue
+      detected=1
+      evidence+=("运行中服务:${unit}")
+    done < <(
+      systemctl list-units --type=service --all --no-legend 2>/dev/null \
+        | awk '{print $1}' \
+        | grep -E '^(x-ui|3x-ui)(@.*)?\.service$' || true
+    )
   fi
 
-  if pgrep -f 'x-ui|3x-ui' >/dev/null 2>&1; then
+  while IFS= read -r proc_line; do
+    [[ -n "${proc_line}" ]] || continue
     detected=1
-    evidence+=("进程:x-ui/3x-ui")
-  fi
+    evidence+=("进程:${proc_line}")
+  done < <(
+    ps -eo pid=,args= 2>/dev/null \
+      | awk '$0 ~ /(^|\/)(x-ui|3x-ui)([[:space:]]|$)/ {print $0}'
+  )
 
   if [[ "${detected}" -eq 1 ]]; then
-    printf "检测到现有 3x-ui 实例，当前将以隔离模式运行。证据：%s\n" "$(IFS='，'; echo "${evidence[*]}")"
+    local preview_count="${#evidence[@]}"
+    if [[ "${preview_count}" -gt 6 ]]; then
+      printf "检测到现有 3x-ui 实例，当前将以隔离模式运行。证据：%s（另有 %s 项）\n" "$(IFS='，'; echo "${evidence[*]:0:6}")" "$((preview_count - 6))"
+    else
+      printf "检测到现有 3x-ui 实例，当前将以隔离模式运行。证据：%s\n" "$(IFS='，'; echo "${evidence[*]}")"
+    fi
     return 0
   fi
 
@@ -564,6 +675,7 @@ ps_status_summary() {
   ps_status_engine_section
   ps_status_ports_section
   ps_status_config_section
+  ps_status_apply_section
   ps_status_systemd_section
   ps_status_cert_section
   ps_status_conflict_section

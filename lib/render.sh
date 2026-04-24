@@ -9,17 +9,72 @@ PROXY_STACK_RENDER_SH_LOADED=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # shellcheck source=lib/logger.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logger.sh"
+# shellcheck source=lib/crypto.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/crypto.sh"
 
 ps_render_record_engine_status() {
   local engine="${1}"
   local ok="${2}"
   local message="${3:-}"
+  local ok_bool="false"
+  if [[ "${ok}" == "true" ]]; then
+    ok_bool="true"
+  fi
   ps_manifest_update \
     --arg e "${engine}" \
-    --argjson ok "${ok}" \
+    --argjson ok "${ok_bool}" \
     --arg msg "${message}" \
     --arg ts "$(ps_now_iso)" \
-    '.status.render[$e] = {ok:$ok, message:$msg, checked_at:$ts} | .meta.updated_at = $ts'
+    '
+      .status.render[$e] = ((.status.render[$e] // {})
+        + {ok:$ok, message:$msg, checked_at:$ts})
+      | if $ok then
+          .status.render[$e].last_success_at = $ts
+          | .status.render[$e].last_success_message = $msg
+        else
+          .status.render[$e].last_failure_at = $ts
+          | .status.render[$e].last_failure_message = $msg
+        end
+      | .meta.updated_at = $ts
+    '
+}
+
+ps_render_validate_reality_manifest_for_engine() {
+  local engine="${1:-xray}"
+  local row stack_id stack_name private_key public_key short_id
+
+  while IFS=$'\t' read -r stack_id stack_name private_key public_key short_id; do
+    [[ -n "${stack_id}" ]] || continue
+
+    if ! ps_is_valid_reality_key "${private_key}"; then
+      printf "协议栈 %s（%s）REALITY private_key 格式无效。\n" "${stack_name}" "${stack_id}"
+      return 1
+    fi
+    if [[ -n "${public_key}" ]] && ! ps_is_valid_reality_key "${public_key}"; then
+      printf "协议栈 %s（%s）REALITY public_key 格式无效。\n" "${stack_name}" "${stack_id}"
+      return 1
+    fi
+    if ! ps_is_valid_reality_short_id "${short_id}"; then
+      printf "协议栈 %s（%s）REALITY short_id 格式无效。\n" "${stack_name}" "${stack_id}"
+      return 1
+    fi
+  done < <(
+    jq -r \
+      --arg e "${engine}" \
+      '.stacks[]?
+      | select(.enabled == true and .engine == $e and .security == "reality")
+      | [
+          .stack_id,
+          (.name // .stack_id),
+          (.reality.private_key // ""),
+          (.reality.public_key // ""),
+          (.reality.short_id // "")
+        ]
+      | @tsv' \
+      "${PS_MANIFEST}"
+  )
+
+  return 0
 }
 
 ps_render_xray_inbounds_json() {
@@ -292,6 +347,13 @@ ps_render_xray_config() {
 
   local log_json inbounds_json outbounds_json routes_json candidate validate_log validate_message
   log_json="$(jq -c --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" '.logs | {loglevel:(.level // "warning"),access:(.xray_access // $xa),error:(.xray_error // $xe),dnsLog:(.dns_log // false),maskAddress:(.mask_address // "quarter")}' "${PS_MANIFEST}")"
+  if ! validate_message="$(ps_render_validate_reality_manifest_for_engine xray)"; then
+    validate_message="$(ps_strip_ansi "${validate_message}")"
+    [[ -n "${validate_message}" ]] || validate_message="REALITY 参数校验失败"
+    ps_log_error "Xray 配置渲染前校验失败，已保留旧配置。原因：${validate_message}"
+    ps_render_record_engine_status xray false "${validate_message}"
+    return 1
+  fi
   inbounds_json="$(ps_render_xray_inbounds_json)"
   outbounds_json="$(ps_render_xray_outbounds_json)"
   routes_json="$(ps_render_xray_routes_json)"
@@ -561,6 +623,14 @@ ps_render_singbox_config() {
   outbounds_json="$(ps_render_singbox_outbounds_json)"
   routes_json="$(ps_render_singbox_routes_json)"
   final_tag="$(jq -r '.routes | sort_by(.priority) | map(select(.enabled != false)) | if length == 0 then "direct" else .[length - 1].outbound end' "${PS_MANIFEST}")"
+
+  if ! validate_message="$(ps_render_validate_reality_manifest_for_engine singbox)"; then
+    validate_message="$(ps_strip_ansi "${validate_message}")"
+    [[ -n "${validate_message}" ]] || validate_message="REALITY 参数校验失败"
+    ps_log_error "sing-box 配置渲染前校验失败，已保留旧配置。原因：${validate_message}"
+    ps_render_record_engine_status singbox false "${validate_message}"
+    return 1
+  fi
 
   candidate="$(mktemp --suffix=.json)"
   jq \

@@ -168,6 +168,7 @@ ps_init_manifest() {
     "project": "kprxy",
     "version": "0.1.0",
     "schema_version": 1,
+    "public_address": "",
     "created_at": "",
     "updated_at": ""
   },
@@ -263,8 +264,22 @@ JSON
   if [[ -z "${created_at}" ]]; then
     ps_manifest_update --arg ts "$(ps_now_iso)" '.meta.created_at = $ts'
   fi
+  ps_manifest_update '.meta.public_address = (.meta.public_address // "")'
   ps_manifest_update '.forwardings = (.forwardings // [])'
-  ps_manifest_update '.status = (.status // {}) | .status.render = (.status.render // {}) | .status.render.xray = (.status.render.xray // {ok:false,message:"",checked_at:""}) | .status.render.singbox = (.status.render.singbox // {ok:false,message:"",checked_at:""})'
+  ps_manifest_update '
+    .status = (.status // {})
+    | .status.render = (.status.render // {})
+    | .status.render.xray = (.status.render.xray // {ok:false,message:"",checked_at:""})
+    | .status.render.singbox = (.status.render.singbox // {ok:false,message:"",checked_at:""})
+    | .status.render.xray.last_success_at = (.status.render.xray.last_success_at // (if (.status.render.xray.ok // false) == true then (.status.render.xray.checked_at // "") else "" end))
+    | .status.render.singbox.last_success_at = (.status.render.singbox.last_success_at // (if (.status.render.singbox.ok // false) == true then (.status.render.singbox.checked_at // "") else "" end))
+    | .status.render.xray.last_success_message = (.status.render.xray.last_success_message // (if (.status.render.xray.ok // false) == true then (.status.render.xray.message // "") else "" end))
+    | .status.render.singbox.last_success_message = (.status.render.singbox.last_success_message // (if (.status.render.singbox.ok // false) == true then (.status.render.singbox.message // "") else "" end))
+    | .status.render.xray.last_failure_at = (.status.render.xray.last_failure_at // (if (.status.render.xray.ok // false) == false then (.status.render.xray.checked_at // "") else "" end))
+    | .status.render.singbox.last_failure_at = (.status.render.singbox.last_failure_at // (if (.status.render.singbox.ok // false) == false then (.status.render.singbox.checked_at // "") else "" end))
+    | .status.render.xray.last_failure_message = (.status.render.xray.last_failure_message // (if (.status.render.xray.ok // false) == false then (.status.render.xray.message // "") else "" end))
+    | .status.render.singbox.last_failure_message = (.status.render.singbox.last_failure_message // (if (.status.render.singbox.ok // false) == false then (.status.render.singbox.message // "") else "" end))
+  '
   ps_manifest_update --arg install "${PS_LOG_DIR}/install.log" --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" --arg sb "${PS_LOG_DIR}/singbox.log" '.logs.install_log = $install | .logs.xray_access = $xa | .logs.xray_error = $xe | .logs.singbox_log = $sb'
   ps_manifest_update --arg xbin "${PS_XRAY_BIN}" --arg sbin "${PS_SINGBOX_BIN}" --arg xcfg "${PS_XRAY_CONFIG}" --arg scfg "${PS_SINGBOX_CONFIG}" --arg xsvc "${PS_XRAY_SERVICE}" --arg ssvc "${PS_SINGBOX_SERVICE}" '.engines.xray.binary = $xbin | .engines.xray.config_path = $xcfg | .engines.xray.service = $xsvc | .engines.singbox.binary = $sbin | .engines.singbox.config_path = $scfg | .engines.singbox.service = $ssvc'
   ps_manifest_update --arg ts "$(ps_now_iso)" '.meta.updated_at = $ts'
@@ -531,16 +546,41 @@ ps_detect_public_ipv4() {
 
 ps_prompt_public_address() {
   local message="${1:-节点对外地址（用于订阅与分享，直接回车使用自动检测值）}"
-  local detected=""
-  detected="$(ps_detect_public_ipv4 || true)"
-  if [[ -n "${detected}" ]]; then
-    ps_log_info "已自动检测公网 IPv4：${detected}" >&2
-    ps_prompt "${message}" "${detected}"
+  local saved=""
+
+  if [[ -f "${PS_MANIFEST}" ]]; then
+    saved="$(jq -r '.meta.public_address // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+  fi
+  if [[ -n "${saved}" ]]; then
+    ps_log_info "已复用已保存节点地址：${saved}" >&2
+    printf '%s' "${saved}"
     return 0
   fi
 
-  ps_log_warn "自动检测公网 IPv4 失败，请手动输入可被客户端访问的公网域名或 IP。" >&2
-  ps_prompt_required "${message}"
+  local detected=""
+  local value=""
+  detected="$(ps_detect_public_ipv4 || true)"
+  if [[ -n "${detected}" ]]; then
+    ps_log_info "已自动检测公网 IPv4：${detected}" >&2
+    value="$(ps_prompt "${message}" "${detected}")"
+  else
+    ps_log_warn "自动检测公网 IPv4 失败，请手动输入可被客户端访问的公网域名或 IP。" >&2
+    value="$(ps_prompt_required "${message}")"
+  fi
+
+  if [[ -n "${value}" && -f "${PS_MANIFEST}" ]]; then
+    ps_manifest_update --arg addr "${value}" --arg ts "$(ps_now_iso)" '.meta.public_address = $addr | .meta.updated_at = $ts' || true
+  fi
+
+  printf '%s' "${value}"
+}
+
+ps_remember_public_address() {
+  local addr="${1:-}"
+  [[ -n "${addr}" ]] || return 0
+  [[ -f "${PS_MANIFEST}" ]] || return 0
+
+  ps_manifest_update --arg addr "${addr}" --arg ts "$(ps_now_iso)" '.meta.public_address = $addr | .meta.updated_at = $ts'
 }
 
 ps_backup_file_if_exists() {

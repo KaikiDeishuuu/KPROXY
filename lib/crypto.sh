@@ -36,6 +36,36 @@ ps_generate_short_id() {
   openssl rand -hex 8
 }
 
+ps_is_valid_reality_key() {
+  local key="${1:-}"
+  [[ "${key}" =~ ^[A-Za-z0-9_-]{43}$ ]]
+}
+
+ps_is_valid_reality_short_id() {
+  local short_id="${1:-}"
+  [[ -z "${short_id}" || "${short_id}" =~ ^([0-9A-Fa-f]{2}){0,8}$ ]]
+}
+
+ps_extract_x25519_key_from_output() {
+  local output="${1:-}"
+  local field="${2:-private}"
+  local key=""
+
+  case "${field}" in
+    private)
+      key="$(printf '%s\n' "${output}" | sed -n 's/^[[:space:]]*Private key:[[:space:]]*//p' | head -n 1 | tr -d '\r')"
+      ;;
+    public)
+      key="$(printf '%s\n' "${output}" | sed -n 's/^[[:space:]]*Public key:[[:space:]]*//p' | head -n 1 | tr -d '\r')"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  printf '%s' "${key}"
+}
+
 ps_ss2022_key_length_for_method() {
   local method="${1:-2022-blake3-aes-128-gcm}"
   case "${method}" in
@@ -56,28 +86,41 @@ ps_generate_ss2022_password() {
 }
 
 ps_generate_reality_keypair() {
-  if ps_command_exists xray; then
-    local x_out
-    x_out="$(xray x25519 2>/dev/null || true)"
-    if [[ -n "${x_out}" ]]; then
-      printf "%s\n" "${x_out}" | awk '
-        /Private key:/ {priv=$3}
-        /Public key:/ {pub=$3}
-        END {
-          if (priv != "" && pub != "") {
-            printf "{\"private_key\":\"%s\",\"public_key\":\"%s\"}", priv, pub
-          }
-        }
-      '
-      return 0
-    fi
+  local xray_bin=""
+  local x_out=""
+  local private_key=""
+  local public_key=""
+
+  if [[ -x "$(ps_engine_binary xray 2>/dev/null || true)" ]]; then
+    xray_bin="$(ps_engine_binary xray)"
+  elif ps_command_exists xray; then
+    xray_bin="$(command -v xray)"
   fi
 
-  # TODO: Replace with strict X25519 derivation when xray helper is unavailable.
-  jq -n \
-    --arg priv "$(openssl rand -base64 32 | tr -d '\n=')" \
-    --arg pub "$(openssl rand -base64 32 | tr -d '\n=')" \
-    '{private_key:$priv, public_key:$pub}'
+  if [[ -z "${xray_bin}" ]]; then
+    ps_log_error "无法生成 REALITY 密钥：未找到 xray x25519 生成器。"
+    return 1
+  fi
+
+  x_out="$("${xray_bin}" x25519 2>/dev/null || true)"
+  if [[ -z "${x_out}" ]]; then
+    ps_log_error "无法生成 REALITY 密钥：xray x25519 执行失败。"
+    return 1
+  fi
+
+  private_key="$(ps_extract_x25519_key_from_output "${x_out}" private)"
+  public_key="$(ps_extract_x25519_key_from_output "${x_out}" public)"
+
+  if ! ps_is_valid_reality_key "${private_key}"; then
+    ps_log_error "无法生成 REALITY 密钥：private_key 格式无效。"
+    return 1
+  fi
+  if ! ps_is_valid_reality_key "${public_key}"; then
+    ps_log_error "无法生成 REALITY 密钥：public_key 格式无效。"
+    return 1
+  fi
+
+  jq -n --arg priv "${private_key}" --arg pub "${public_key}" '{private_key:$priv, public_key:$pub}'
 }
 
 ps_pick_random_port() {

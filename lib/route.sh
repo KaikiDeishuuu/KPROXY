@@ -18,10 +18,10 @@ ps_route_pick_name() {
   fi
 
   local i=1 row
-  printf "\n"
+  printf "\n" >&2
   for row in "${rows[@]}"; do
     IFS='|' read -r name priority outbound enabled <<<"${row}"
-    printf "%d) %s priority=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${priority}" "${outbound}" "${enabled}"
+    printf "%d) %s priority=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${priority}" "${outbound}" "${enabled}" >&2
     i=$((i + 1))
   done
 
@@ -46,7 +46,7 @@ ps_route_pick_outbound() {
   local i=1 row
   for row in "${rows[@]}"; do
     IFS='|' read -r tag type <<<"${row}"
-    printf "%d) %s (%s)\n" "${i}" "${tag}" "${type}"
+    printf "%d) %s (%s)\n" "${i}" "${tag}" "${type}" >&2
     i=$((i + 1))
   done
 

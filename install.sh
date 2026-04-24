@@ -41,7 +41,7 @@ kprxy 安装器/控制台
 
 子命令：
   update                     同步最新脚本/模板到当前安装目录
-  service-wizard             一步式创建服务（自动完成模板+入口绑定）
+  service-wizard             一键搭建（自动完成模板+入口绑定）
   export                     一键导出：客户端配置 + 初始化规则包（推荐给普通用户）
   doctor                     执行依赖预检
   status                     查看运行状态（summary/engine/cert/conflict）
@@ -611,6 +611,50 @@ ps_service_render_engine() {
   esac
 }
 
+ps_service_prepare_tls_material() {
+  local stack_id="${1:-}"
+  [[ -n "${stack_id}" ]] || return 1
+
+  local security cert_mode domain acme_email
+  security="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .security // "none"' "${PS_MANIFEST}")"
+  if [[ "${security}" != "tls" ]]; then
+    return 0
+  fi
+
+  cert_mode="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .tls_cert_mode // "manual"' "${PS_MANIFEST}")"
+  domain="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | (.tls.domain // .server // "")' "${PS_MANIFEST}")"
+  acme_email="$(jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | (.tls.acme_email // "")' "${PS_MANIFEST}")"
+
+  if [[ -z "${domain}" ]]; then
+    ps_ui_warn "TLS 服务缺少域名，无法自动准备证书。"
+    return 1
+  fi
+
+  if ps_cert_bind_domain_to_stack "${stack_id}" "${domain}"; then
+    ps_log_info "已复用现有证书并绑定到服务：${domain}"
+    return 0
+  fi
+
+  if [[ "${cert_mode}" != "acme" ]]; then
+    ps_ui_warn "TLS 证书模式为 ${cert_mode}，当前未检测到可用证书，请先在“证书与域名”中配置证书。"
+    return 1
+  fi
+
+  ps_ui_info "检测到 TLS + ACME，正在自动申请证书：${domain}"
+  if ! ps_cert_issue_acme_auto_domain "${domain}" "${acme_email}"; then
+    ps_ui_warn "自动申请证书失败，服务定义已保存但不会应用到运行配置。"
+    return 1
+  fi
+
+  if ! ps_cert_bind_domain_to_stack "${stack_id}" "${domain}"; then
+    ps_ui_warn "证书已签发，但绑定到服务失败，请在“证书与域名”中检查。"
+    return 1
+  fi
+
+  ps_log_success "TLS 证书已自动绑定到服务：${domain}"
+  return 0
+}
+
 ps_service_finalize_runtime() {
   local stack_id="${1:-}"
   local engine
@@ -622,9 +666,17 @@ ps_service_finalize_runtime() {
     return 1
   fi
 
+  if ! ps_service_prepare_tls_material "${stack_id}"; then
+    ps_service_runtime_result 0 "TLS 证书未就绪"
+    ps_ui_warn "新服务定义已写入状态文件，但 TLS 证书未就绪，未应用到当前运行配置。"
+    return 1
+  fi
+
   if ! ps_service_render_engine "${engine}"; then
     ps_service_runtime_result 0 "配置渲染或校验失败"
-    ps_ui_warn "当前服务配置渲染存在告警，请前往“运行状态与诊断”查看详情。"
+    ps_ui_warn "新服务定义已写入状态文件，但未应用到当前运行配置。"
+    ps_ui_warn "当前仍保留旧配置继续运行，新端口在修复前不会监听。"
+    ps_ui_warn "请前往“运行状态与诊断”查看渲染/校验详情。"
     return 1
   fi
 
@@ -673,8 +725,28 @@ ps_service_create_bind_public_inbound() {
   ps_log_success "已自动创建并绑定公网监听入口：${tag}"
 }
 
+ps_service_rollback_wizard_artifacts() {
+  local stack_id="${1:-}"
+  [[ -n "${stack_id}" ]] || return 1
+
+  local stack_count inbound_count
+  stack_count="$(jq -r --arg sid "${stack_id}" '[.stacks[]? | select(.stack_id == $sid)] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+  inbound_count="$(jq -r --arg sid "${stack_id}" '[.inbounds[]? | select(.stack_id == $sid)] | length' "${PS_MANIFEST}" 2>/dev/null || printf '0')"
+
+  ps_manifest_update \
+    --arg sid "${stack_id}" \
+    --arg ts "$(ps_now_iso)" \
+    '.stacks |= map(select(.stack_id != $sid)) | .inbounds |= map(select(.stack_id != $sid)) | .meta.updated_at = $ts'
+
+  ps_ui_warn "已回滚本次未完成创建：移除协议栈 ${stack_id}，清理关联入口 ${inbound_count} 条。"
+  if [[ "${stack_count}" == "0" ]]; then
+    ps_ui_warn "回滚时未检测到可移除的协议栈记录 ：${stack_id}"
+  fi
+  return 0
+}
+
 ps_service_wizard() {
-  ps_print_header "一步式创建服务"
+  ps_print_header "一键搭建"
   ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
   ps_service_runtime_result 0 ""
 
@@ -700,12 +772,31 @@ ps_service_wizard() {
   stack_protocol="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .protocol // "vless"' "${PS_MANIFEST}")"
   stack_port="$(jq -r --arg sid "${new_stack_id}" '.stacks[] | select(.stack_id == $sid) | .port // 0' "${PS_MANIFEST}")"
 
-  ps_service_create_bind_public_inbound "${new_stack_id}" "${stack_protocol}" "${stack_port}" || true
-  ps_service_finalize_runtime "${new_stack_id}" || true
+  if ! ps_service_create_bind_public_inbound "${new_stack_id}" "${stack_protocol}" "${stack_port}"; then
+    ps_service_runtime_result 0 "公网入口绑定失败"
+    ps_service_rollback_wizard_artifacts "${new_stack_id}" || true
+    return 1
+  fi
+
+  if ! ps_service_finalize_runtime "${new_stack_id}"; then
+    local failed_reason="${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-运行链路失败}"
+    ps_service_rollback_wizard_artifacts "${new_stack_id}" || true
+    ps_service_runtime_result 0 "${failed_reason}（已自动回滚）"
+    return 1
+  fi
+
+  return 0
 }
 
 ps_action_create_service() {
-  ps_service_wizard || return 1
+  if ! ps_service_wizard; then
+    printf "\n创建失败\n"
+    printf "原因：%s\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-未知原因}"
+    ps_show_next_steps \
+      "修复后重新执行“一键搭建”" \
+      "前往“运行状态与诊断”查看最近渲染失败信息"
+    return 1
+  fi
   local stack_info
   stack_info="$(jq -r '.stacks | if length==0 then "" else (sort_by(.created_at // "") | last | "名称：\(.name // "-") | 协议：\(.protocol // "-") | 安全：\(.security // "-") | 地址：\(.server // "-") | 端口：\(.port // "-")") end' "${PS_MANIFEST}")"
   [[ -n "${stack_info}" ]] && printf "\n创建完成\n%s\n" "${stack_info}"
@@ -715,7 +806,9 @@ ps_action_create_service() {
       "前往“订阅与导出”生成客户端配置" \
       "前往“运行状态与诊断”检查监听与配置状态"
   else
-    printf "状态：服务已创建，但运行链路未完成（%s）\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-原因未知}"
+    printf "状态：服务定义已创建，但未完成运行链路（%s）\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-原因未知}"
+    printf "说明：服务记录已写入 state/manifest，但未应用到当前运行配置。\n"
+    printf "说明：系统继续运行旧配置；新端口在修复前不会监听。\n"
     ps_show_next_steps \
       "前往“运行状态与诊断”查看渲染/校验详情" \
       "前往“核心与运行控制”检查内核安装与服务启动"
@@ -933,7 +1026,7 @@ ps_menu_service_management() {
   while true; do
     ps_ui_menu_select_with_hint "创建与管理服务" "创建对外可用的代理服务（如 VLESS/REALITY、Shadowsocks 2022）。" "返回" "请选择" \
       "查看服务列表" \
-      "一步式创建服务（推荐）" \
+      "一键搭建（推荐）" \
       "编辑服务参数" \
       "删除服务" \
       "启用/禁用服务" \
@@ -1277,7 +1370,7 @@ ps_handle_subcommand() {
       ;;
     *)
       ps_ui_error "不支持的子命令： ${subcommand}"
-      printf '%s\n' "支持的子命令：update、service-wizard、export、doctor、status、uninstall、cleanup、reset、logs、info、config repo、repair-launcher"
+      printf '%s\n' "支持的子命令：update、service-wizard（一键搭建）、export、doctor、status、uninstall、cleanup、reset、logs、info、config repo、repair-launcher"
       return 2
       ;;
   esac

@@ -119,6 +119,101 @@ ps_cert_issue_acme() {
   ps_log_success "证书已签发并安装： ${domain}"
 }
 
+ps_cert_domain_entry_ready() {
+  local domain="${1:-}"
+  [[ -n "${domain}" ]] || return 1
+
+  local fullchain key
+  fullchain="$(jq -r --arg d "${domain}" '.certificates[$d].fullchain // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+  key="$(jq -r --arg d "${domain}" '.certificates[$d].key // ""' "${PS_MANIFEST}" 2>/dev/null || true)"
+
+  [[ -n "${fullchain}" && -n "${key}" && -f "${fullchain}" && -f "${key}" ]]
+}
+
+ps_cert_bind_domain_to_stack() {
+  local stack_id="${1:-}"
+  local domain="${2:-}"
+  [[ -n "${stack_id}" && -n "${domain}" ]] || return 1
+
+  if ! ps_cert_domain_entry_ready "${domain}"; then
+    return 1
+  fi
+
+  local fullchain key
+  fullchain="$(jq -r --arg d "${domain}" '.certificates[$d].fullchain // ""' "${PS_MANIFEST}")"
+  key="$(jq -r --arg d "${domain}" '.certificates[$d].key // ""' "${PS_MANIFEST}")"
+
+  ps_manifest_update \
+    --arg id "${stack_id}" \
+    --arg domain "${domain}" \
+    --arg fullchain "${fullchain}" \
+    --arg key "${key}" \
+    --arg ts "$(ps_now_iso)" \
+    '.stacks |= map(if .stack_id == $id then .tls.domain = $domain | .tls.fullchain = $fullchain | .tls.key = $key | .updated_at = $ts else . end) | .meta.updated_at = $ts'
+}
+
+ps_cert_issue_acme_auto_domain() {
+  local domain="${1:-}"
+  local acme_email="${2:-}"
+  [[ -n "${domain}" ]] || return 1
+
+  local acme_bin
+  acme_bin="$(ps_cert_acme_bin || true)"
+  if [[ -z "${acme_bin}" ]]; then
+    if ! ps_command_exists curl; then
+      ps_log_error "自动签发失败：缺少 curl，且未检测到 acme.sh。"
+      return 1
+    fi
+
+    ps_log_info "未检测到 acme.sh，正在自动安装..."
+    if [[ -n "${acme_email}" ]]; then
+      if ! curl -fsSL https://get.acme.sh | sh -s email="${acme_email}"; then
+        ps_log_error "自动安装 acme.sh 失败。"
+        return 1
+      fi
+    else
+      if ! curl -fsSL https://get.acme.sh | sh; then
+        ps_log_error "自动安装 acme.sh 失败。"
+        return 1
+      fi
+    fi
+
+    acme_bin="$(ps_cert_acme_bin || true)"
+    if [[ -z "${acme_bin}" ]]; then
+      ps_log_error "自动安装后仍未找到 acme.sh。"
+      return 1
+    fi
+  fi
+
+  if ! "${acme_bin}" --issue -d "${domain}" --standalone; then
+    ps_log_error "自动签发证书失败：${domain}（standalone）。"
+    return 1
+  fi
+
+  local cert_dir="${PS_CERT_DIR}/${domain}"
+  local key_path="${cert_dir}/key.pem"
+  local fullchain_path="${cert_dir}/fullchain.pem"
+  mkdir -p "${cert_dir}"
+
+  if ! "${acme_bin}" --install-cert -d "${domain}" --key-file "${key_path}" --fullchain-file "${fullchain_path}"; then
+    ps_log_error "自动安装证书失败：${domain}。"
+    return 1
+  fi
+
+  ps_manifest_update \
+    --arg domain "${domain}" \
+    --arg fullchain "${fullchain_path}" \
+    --arg key "${key_path}" \
+    --arg issuer "acme.sh" \
+    --arg renew_mode "standalone" \
+    --argjson renew_enabled true \
+    --arg updated "$(ps_now_iso)" \
+    '.certificates[$domain] = {domain:$domain, fullchain:$fullchain, key:$key, issuer:$issuer, renew_mode:$renew_mode, renew_enabled:$renew_enabled, updated_at:$updated} | .meta.updated_at = $updated'
+
+  ps_log_success "自动签发并安装证书完成：${domain}"
+  return 0
+}
+
 ps_cert_install_custom() {
   ps_print_header "安装自定义证书"
   local domain fullchain_path key_path mode_choice
@@ -242,6 +337,19 @@ ps_cert_manage_reality_params() {
   short_id="$(ps_prompt "Short ID" "")"
   public_key="$(ps_prompt "REALITY 公钥（可选）" "")"
   private_key="$(ps_prompt "REALITY 私钥（可选）" "")"
+
+  if [[ -n "${short_id}" ]] && ! ps_is_valid_reality_short_id "${short_id}"; then
+    ps_log_error "Short ID 格式无效：需为 0-16 位十六进制字节串（偶数长度）。"
+    return 1
+  fi
+  if [[ -n "${public_key}" ]] && ! ps_is_valid_reality_key "${public_key}"; then
+    ps_log_error "REALITY 公钥格式无效：需为 URL-safe Base64（43 字符）。"
+    return 1
+  fi
+  if [[ -n "${private_key}" ]] && ! ps_is_valid_reality_key "${private_key}"; then
+    ps_log_error "REALITY 私钥格式无效：需为 URL-safe Base64（43 字符）。"
+    return 1
+  fi
 
   local jq_filter='.stacks |= map(if .stack_id == $id then . else . end)'
   [[ -n "${sni}" ]] && jq_filter+=' | .stacks |= map(if .stack_id == $id then .reality.server_name = $sni else . end)'

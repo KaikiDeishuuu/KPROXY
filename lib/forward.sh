@@ -20,10 +20,10 @@ ps_forward_pick_id() {
   fi
 
   local i=1 row
-  printf "\n"
+  printf "\n" >&2
   for row in "${rows[@]}"; do
     IFS='|' read -r fid name inbound_tag outbound_tag listen_port enabled <<<"${row}"
-    printf "%d) %s id=%s listen=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${fid}" "${listen_port}" "${outbound_tag}" "${enabled}"
+    printf "%d) %s id=%s listen=%s outbound=%s 启用=%s\n" "${i}" "${name}" "${fid}" "${listen_port}" "${outbound_tag}" "${enabled}" >&2
     i=$((i + 1))
   done
 
@@ -48,7 +48,7 @@ ps_forward_pick_existing_outbound() {
   local i=1 row
   for row in "${rows[@]}"; do
     IFS='|' read -r tag type server port <<<"${row}"
-    printf "%d) %s type=%s target=%s:%s\n" "${i}" "${tag}" "${type}" "${server}" "${port}"
+    printf "%d) %s type=%s target=%s:%s\n" "${i}" "${tag}" "${type}" "${server}" "${port}" >&2
     i=$((i + 1))
   done
 

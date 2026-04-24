@@ -75,12 +75,20 @@
       "xray": {
         "ok": false,
         "message": "",
-        "checked_at": ""
+        "checked_at": "",
+        "last_success_at": "",
+        "last_success_message": "",
+        "last_failure_at": "",
+        "last_failure_message": ""
       },
       "singbox": {
         "ok": false,
         "message": "",
-        "checked_at": ""
+        "checked_at": "",
+        "last_success_at": "",
+        "last_success_message": "",
+        "last_failure_at": "",
+        "last_failure_message": ""
       }
     }
   }

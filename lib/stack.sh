@@ -48,10 +48,10 @@ ps_stack_pick_id() {
 
   local i=1
   local row
-  printf "\n"
+  printf "\n" >&2
   for row in "${rows[@]}"; do
     IFS='|' read -r stack_id name engine enabled <<<"${row}"
-    printf "%d) %s [%s] 启用=%s\n" "${i}" "${name}" "${engine}" "${enabled}"
+    printf "%d) %s [%s] 启用=%s\n" "${i}" "${name}" "${engine}" "${enabled}" >&2
     i=$((i + 1))
   done
 
@@ -151,7 +151,7 @@ ps_stack_create() {
     return 1
   fi
 
-  local name server port tls_cert_mode
+  local name server port tls_cert_mode tls_acme_email
   name="$(ps_prompt_required "协议栈名称")"
   server="$(ps_prompt_public_address "节点对外地址（用于订阅与分享，直接回车使用自动检测值）")"
   port="$(ps_prompt_for_port "服务监听端口（输入端口，回车随机）")"
@@ -161,11 +161,16 @@ ps_stack_create() {
   fi
   if [[ "${stack_security}" == "tls" ]]; then
     tls_cert_mode="$(ps_prompt "TLS 证书模式（acme/manual）" "acme")"
+    tls_acme_email=""
+    if [[ "${tls_cert_mode}" == "acme" ]]; then
+      tls_acme_email="$(ps_prompt "ACME 注册邮箱（自动签发使用，可留空）" "")"
+    fi
     if [[ "${stack_protocol}" == "shadowsocks-2022" && "${engine}" == "singbox" ]]; then
       ps_log_warn "sing-box 的 SS2022+TLS 兼容性因版本而异，渲染器会先校验再应用。"
     fi
   else
     tls_cert_mode="none"
+    tls_acme_email=""
   fi
 
   local client_sni="" client_fingerprint=""
@@ -186,14 +191,36 @@ ps_stack_create() {
 
   if [[ "${stack_security}" == "reality" ]]; then
     local keypair
-    keypair="$(ps_generate_reality_keypair)"
+    keypair="$(ps_generate_reality_keypair)" || {
+      ps_log_error "REALITY 密钥生成失败，请先安装/修复 xray-core 后重试。"
+      return 1
+    }
+
+    local reality_private_key reality_public_key reality_short_id
+    reality_private_key="$(jq -r '.private_key // ""' <<<"${keypair}")"
+    reality_public_key="$(jq -r '.public_key // ""' <<<"${keypair}")"
+    reality_short_id="$(ps_generate_short_id)"
+
+    if ! ps_is_valid_reality_key "${reality_private_key}"; then
+      ps_log_error "REALITY 私钥生成异常，已中止创建。"
+      return 1
+    fi
+    if ! ps_is_valid_reality_key "${reality_public_key}"; then
+      ps_log_error "REALITY 公钥生成异常，已中止创建。"
+      return 1
+    fi
+    if ! ps_is_valid_reality_short_id "${reality_short_id}"; then
+      ps_log_error "REALITY short_id 生成异常，已中止创建。"
+      return 1
+    fi
+
     reality_json="$(jq -n \
       --arg enabled true \
       --arg sni "${server}" \
       --arg dest "${server}:443" \
-      --arg private_key "$(jq -r '.private_key' <<<"${keypair}")" \
-      --arg public_key "$(jq -r '.public_key' <<<"${keypair}")" \
-      --arg short_id "$(ps_generate_short_id)" \
+      --arg private_key "${reality_private_key}" \
+      --arg public_key "${reality_public_key}" \
+      --arg short_id "${reality_short_id}" \
       --arg fingerprint "chrome" \
       '{enabled:($enabled == "true"),server_name:$sni,dest:$dest,private_key:$private_key,public_key:$public_key,short_id:$short_id,fingerprint:$fingerprint}')"
   fi
@@ -224,6 +251,7 @@ ps_stack_create() {
     --argjson grpc "${grpc_json}" \
     --argjson xhttp "${xhttp_json}" \
     --argjson ss2022 "${ss_json}" \
+    --arg tls_acme_email "${tls_acme_email}" \
     --arg created_at "$(ps_now_iso)" \
     '{
       stack_id:$stack_id,
@@ -246,7 +274,7 @@ ps_stack_create() {
       grpc:$grpc,
       xhttp:$xhttp,
       ss2022:$ss2022,
-      tls:{domain:$server,fullchain:"",key:""},
+      tls:{domain:$server,fullchain:"",key:"",acme_email:$tls_acme_email},
       enabled:true,
       created_at:$created_at,
       updated_at:$created_at
@@ -317,6 +345,9 @@ ps_stack_edit() {
     --arg fingerprint "${fingerprint}" \
     --arg ts "$(ps_now_iso)" \
     "${jq_filter}"
+  if [[ -n "${server}" ]]; then
+    ps_remember_public_address "${server}" || true
+  fi
   ps_log_success "协议栈已更新： ${stack_id}"
 }
 

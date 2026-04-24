@@ -20,10 +20,10 @@ ps_outbound_pick_tag() {
   fi
 
   local i=1 row
-  printf "\n"
+  printf "\n" >&2
   for row in "${rows[@]}"; do
     IFS='|' read -r tag type enabled <<<"${row}"
-    printf "%d) %s type=%s 启用=%s\n" "${i}" "${tag}" "${type}" "${enabled}"
+    printf "%d) %s type=%s 启用=%s\n" "${i}" "${tag}" "${type}" "${enabled}" >&2
     i=$((i + 1))
   done
 
