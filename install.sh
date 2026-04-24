@@ -525,6 +525,16 @@ ps_service_stack_engine() {
   jq -r --arg sid "${stack_id}" '.stacks[] | select(.stack_id == $sid) | .engine // "xray"' "${PS_MANIFEST}"
 }
 
+PS_SERVICE_WIZARD_RUNTIME_OK=0
+PS_SERVICE_WIZARD_RUNTIME_MESSAGE=""
+
+ps_service_runtime_result() {
+  local ok="${1:-0}"
+  local message="${2:-}"
+  PS_SERVICE_WIZARD_RUNTIME_OK="${ok}"
+  PS_SERVICE_WIZARD_RUNTIME_MESSAGE="${message}"
+}
+
 ps_service_ensure_engine_binary() {
   local engine="${1:-xray}"
   case "${engine}" in
@@ -571,7 +581,7 @@ ps_service_try_start_engine() {
     return 1
   fi
 
-  ps_systemd_install_units || {
+  ps_systemd_install_units "${engine}" || {
     ps_ui_warn "systemd 单元安装失败，请在“核心与运行控制”中检查。"
     return 1
   }
@@ -585,19 +595,45 @@ ps_service_try_start_engine() {
   return 1
 }
 
+ps_service_render_engine() {
+  local engine="${1:-xray}"
+  case "${engine}" in
+    xray)
+      ps_render_xray_config
+      ;;
+    singbox)
+      ps_render_singbox_config
+      ;;
+    *)
+      ps_ui_warn "未知引擎：${engine}，跳过自动渲染。"
+      return 1
+      ;;
+  esac
+}
+
 ps_service_finalize_runtime() {
   local stack_id="${1:-}"
   local engine
   engine="$(ps_service_stack_engine "${stack_id}")"
   [[ -n "${engine}" ]] || engine="xray"
 
-  ps_service_ensure_engine_binary "${engine}" || return 1
-
-  if ! ps_render_all; then
-    ps_ui_warn "配置渲染存在告警，请前往“运行状态与诊断”查看详情。"
+  if ! ps_service_ensure_engine_binary "${engine}"; then
+    ps_service_runtime_result 0 "私有内核安装失败"
+    return 1
   fi
 
-  ps_service_try_start_engine "${engine}" || return 1
+  if ! ps_service_render_engine "${engine}"; then
+    ps_service_runtime_result 0 "配置渲染或校验失败"
+    ps_ui_warn "当前服务配置渲染存在告警，请前往“运行状态与诊断”查看详情。"
+    return 1
+  fi
+
+  if ! ps_service_try_start_engine "${engine}"; then
+    ps_service_runtime_result 0 "服务启动失败"
+    return 1
+  fi
+
+  ps_service_runtime_result 1 "服务已创建并成功启动"
   return 0
 }
 
@@ -640,6 +676,7 @@ ps_service_create_bind_public_inbound() {
 ps_service_wizard() {
   ps_print_header "一步式创建服务"
   ps_ui_tip "将自动完成：协议模板创建 + 公网监听入口绑定。"
+  ps_service_runtime_result 0 ""
 
   local before_ids after_ids new_stack_id
   before_ids="$(jq -r '.stacks[]?.stack_id' "${PS_MANIFEST}" | tr '\n' ' ')"
@@ -672,10 +709,17 @@ ps_action_create_service() {
   local stack_info
   stack_info="$(jq -r '.stacks | if length==0 then "" else (sort_by(.created_at // "") | last | "名称：\(.name // "-") | 协议：\(.protocol // "-") | 安全：\(.security // "-") | 地址：\(.server // "-") | 端口：\(.port // "-")") end' "${PS_MANIFEST}")"
   [[ -n "${stack_info}" ]] && printf "\n创建完成\n%s\n" "${stack_info}"
-  printf "状态：已生成并启用（含自动入口绑定）\n"
-  ps_show_next_steps \
-    "前往“订阅与导出”生成客户端配置" \
-    "前往“运行状态与诊断”检查监听与配置状态"
+  if [[ "${PS_SERVICE_WIZARD_RUNTIME_OK:-0}" == "1" ]]; then
+    printf "状态：已生成并启用（含自动入口绑定）\n"
+    ps_show_next_steps \
+      "前往“订阅与导出”生成客户端配置" \
+      "前往“运行状态与诊断”检查监听与配置状态"
+  else
+    printf "状态：服务已创建，但运行链路未完成（%s）\n" "${PS_SERVICE_WIZARD_RUNTIME_MESSAGE:-原因未知}"
+    ps_show_next_steps \
+      "前往“运行状态与诊断”查看渲染/校验详情" \
+      "前往“核心与运行控制”检查内核安装与服务启动"
+  fi
 }
 
 ps_action_create_protocol_template() {
@@ -729,6 +773,17 @@ ps_check_dependencies() {
       missing=1
     fi
   done
+
+  if ps_command_exists unzip || ps_command_exists bsdtar; then
+    if ps_command_exists unzip; then
+      printf "[OK] %s\n" "unzip"
+    else
+      printf "[OK] %s\n" "bsdtar"
+    fi
+  else
+    printf "[缺失] %s\n" "unzip 或 bsdtar（xray-core 自动安装所需）"
+    missing=1
+  fi
 
   for cmd in "${optional[@]}"; do
     if ps_command_exists "${cmd}"; then

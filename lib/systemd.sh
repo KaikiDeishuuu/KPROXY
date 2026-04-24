@@ -52,25 +52,48 @@ ps_systemd_enabled_state() {
 ps_systemd_install_units() {
   ps_print_header "安装 systemd 单元"
 
-  local xray_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-xray.service.tpl"
-  local singbox_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-singbox.service.tpl"
-  local xray_unit="${PS_SYSTEMD_DIR}/${PS_XRAY_SERVICE}.service"
-  local singbox_unit="${PS_SYSTEMD_DIR}/${PS_SINGBOX_SERVICE}.service"
+  local target="${1:-all}"
+  local rendered=()
+  mkdir -p "${PS_SYSTEMD_DIR}"
 
-  if [[ ! -f "${xray_tpl}" || ! -f "${singbox_tpl}" ]]; then
-    ps_log_error "缺少 systemd 模板文件"
+  case "${target}" in
+    xray|all)
+      local xray_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-xray.service.tpl"
+      local xray_unit="${PS_SYSTEMD_DIR}/${PS_XRAY_SERVICE}.service"
+      if [[ ! -f "${xray_tpl}" ]]; then
+        ps_log_error "缺少 Xray systemd 模板：${xray_tpl}"
+        return 1
+      fi
+      ps_systemd_render_unit "${xray_tpl}" "${xray_unit}"
+      rendered+=("${PS_XRAY_SERVICE}")
+      ;;
+  esac
+
+  case "${target}" in
+    singbox|all)
+      local singbox_tpl="${PS_TEMPLATES_DIR}/systemd/proxy-stack-singbox.service.tpl"
+      local singbox_unit="${PS_SYSTEMD_DIR}/${PS_SINGBOX_SERVICE}.service"
+      if [[ ! -f "${singbox_tpl}" ]]; then
+        ps_log_error "缺少 sing-box systemd 模板：${singbox_tpl}"
+        return 1
+      fi
+      ps_systemd_render_unit "${singbox_tpl}" "${singbox_unit}"
+      rendered+=("${PS_SINGBOX_SERVICE}")
+      ;;
+  esac
+
+  if [[ "${#rendered[@]}" -eq 0 ]]; then
+    ps_log_error "未知 systemd 安装目标：${target}"
     return 1
   fi
 
-  mkdir -p "${PS_SYSTEMD_DIR}"
-  ps_systemd_render_unit "${xray_tpl}" "${xray_unit}"
-  ps_systemd_render_unit "${singbox_tpl}" "${singbox_unit}"
-
   if ps_systemd_is_available && ps_is_root; then
+    local service
     systemctl daemon-reload
-    systemctl enable "${PS_XRAY_SERVICE}" >/dev/null 2>&1 || true
-    systemctl enable "${PS_SINGBOX_SERVICE}" >/dev/null 2>&1 || true
-    ps_log_success "systemd 单元已安装并启用"
+    for service in "${rendered[@]}"; do
+      systemctl enable "${service}" >/dev/null 2>&1 || true
+    done
+    ps_log_success "systemd 单元已安装并启用：$(IFS=,; echo "${rendered[*]}")"
   else
     ps_log_warn "systemd 不可用或当前非 root。单元文件已生成到 ${PS_SYSTEMD_DIR}"
   fi

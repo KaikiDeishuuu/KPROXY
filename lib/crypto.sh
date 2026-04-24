@@ -36,8 +36,23 @@ ps_generate_short_id() {
   openssl rand -hex 8
 }
 
+ps_ss2022_key_length_for_method() {
+  local method="${1:-2022-blake3-aes-128-gcm}"
+  case "${method}" in
+    2022-blake3-aes-128-gcm) printf "16" ;;
+    2022-blake3-aes-256-gcm|2022-blake3-chacha20-poly1305) printf "32" ;;
+    *)
+      # Unknown methods fall back to 32 bytes, which is broadly compatible.
+      printf "32"
+      ;;
+  esac
+}
+
 ps_generate_ss2022_password() {
-  openssl rand -base64 24 | tr -d '\n='
+  local method="${1:-2022-blake3-aes-128-gcm}"
+  local key_length
+  key_length="$(ps_ss2022_key_length_for_method "${method}")"
+  openssl rand -base64 "${key_length}" | tr -d '\n'
 }
 
 ps_generate_reality_keypair() {

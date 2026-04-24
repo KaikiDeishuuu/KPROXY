@@ -54,6 +54,10 @@ ps_xray_install_upgrade() {
     ps_log_error "缺少必需依赖"
     return 1
   fi
+  if ! ps_command_exists unzip && ! ps_command_exists bsdtar; then
+    ps_log_error "缺少解压依赖：请安装 unzip 或 bsdtar。"
+    return 1
+  fi
 
   local arch package_name
   case "${PS_ARCH}" in

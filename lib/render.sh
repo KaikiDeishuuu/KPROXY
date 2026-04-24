@@ -289,7 +289,7 @@ ps_render_xray_config() {
   config_path="$(ps_engine_config_path xray)"
   xray_bin="$(ps_engine_binary xray)"
 
-  local log_json inbounds_json outbounds_json routes_json candidate
+  local log_json inbounds_json outbounds_json routes_json candidate validate_log validate_message
   log_json="$(jq -c --arg xa "${PS_LOG_DIR}/xray-access.log" --arg xe "${PS_LOG_DIR}/xray-error.log" '.logs | {loglevel:(.level // "warning"),access:(.xray_access // $xa),error:(.xray_error // $xe),dnsLog:(.dns_log // false),maskAddress:(.mask_address // "quarter")}' "${PS_MANIFEST}")"
   inbounds_json="$(ps_render_xray_inbounds_json)"
   outbounds_json="$(ps_render_xray_outbounds_json)"
@@ -305,12 +305,17 @@ ps_render_xray_config() {
     "${template}" >"${candidate}"
 
   if [[ -x "${xray_bin}" ]]; then
-    if ! "${xray_bin}" run -test -c "${candidate}" >/dev/null 2>&1; then
-      ps_log_error "Xray 配置校验失败，已保留旧配置。"
-      ps_render_record_engine_status xray false "配置校验失败"
+    validate_log="$(mktemp)"
+    if ! "${xray_bin}" run -test -c "${candidate}" >"${validate_log}" 2>&1; then
+      validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
+      [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
+      ps_log_error "Xray 配置校验失败，已保留旧配置。原因：${validate_message}"
+      ps_render_record_engine_status xray false "${validate_message}"
+      rm -f "${validate_log}"
       rm -f "${candidate}"
       return 1
     fi
+    rm -f "${validate_log}"
   else
     ps_log_warn "未找到 xray，已跳过 Xray 配置校验"
   fi
@@ -530,7 +535,7 @@ ps_render_singbox_routes_json() {
           domain_suffix: (.domain_suffix // []),
           domain_keyword: (.domain_keyword // []),
           ip_cidr: (.ip_cidr // []),
-          network: ((.network // []) | map(ascii_lowercase))
+          network: ((.network // []) | map(ascii_downcase))
         }
       | with_entries(select(.value != [] and .value != "" and .value != null))
     ]
@@ -550,11 +555,11 @@ ps_render_singbox_config() {
   config_path="$(ps_engine_config_path singbox)"
   singbox_bin="$(ps_engine_binary singbox)"
 
-  local inbounds_json outbounds_json routes_json final_tag candidate
+  local inbounds_json outbounds_json routes_json final_tag candidate validate_log validate_message
   inbounds_json="$(ps_render_singbox_inbounds_json)"
   outbounds_json="$(ps_render_singbox_outbounds_json)"
   routes_json="$(ps_render_singbox_routes_json)"
-  final_tag="$(jq -r '.routes | sort_by(.priority) | map(select(.enabled != false)) | last?.outbound // "direct"' "${PS_MANIFEST}")"
+  final_tag="$(jq -r '.routes | sort_by(.priority) | map(select(.enabled != false)) | if length == 0 then "direct" else .[length - 1].outbound end' "${PS_MANIFEST}")"
 
   candidate="$(mktemp)"
   jq \
@@ -567,12 +572,17 @@ ps_render_singbox_config() {
     "${template}" >"${candidate}"
 
   if [[ -x "${singbox_bin}" ]]; then
-    if ! "${singbox_bin}" check -c "${candidate}" >/dev/null 2>&1; then
-      ps_log_error "sing-box 配置校验失败，已保留旧配置。"
-      ps_render_record_engine_status singbox false "配置校验失败"
+    validate_log="$(mktemp)"
+    if ! "${singbox_bin}" check -c "${candidate}" >"${validate_log}" 2>&1; then
+      validate_message="$(tail -n 1 "${validate_log}" 2>/dev/null || true)"
+      [[ -n "${validate_message}" ]] || validate_message="配置校验失败"
+      ps_log_error "sing-box 配置校验失败，已保留旧配置。原因：${validate_message}"
+      ps_render_record_engine_status singbox false "${validate_message}"
+      rm -f "${validate_log}"
       rm -f "${candidate}"
       return 1
     fi
+    rm -f "${validate_log}"
   else
     ps_log_warn "未找到 sing-box，已跳过配置校验"
   fi
