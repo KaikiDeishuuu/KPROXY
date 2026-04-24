@@ -495,6 +495,17 @@ ps_run_action() {
   if ! "${action}" "$@"; then
     ps_ui_error "操作失败： ${action}"
   fi
+
+  if [[ "${PS_SESSION_TERMINATE_AFTER_ACTION:-0}" == "1" ]]; then
+    if [[ -n "${PS_SESSION_TERMINATE_REASON:-}" ]]; then
+      ps_ui_warn "${PS_SESSION_TERMINATE_REASON}"
+    else
+      ps_ui_warn "当前会话即将退出。"
+    fi
+    ps_ui_tip "如需重新安装，请重新执行安装命令（或在仓库内运行 install.sh update）。"
+    exit 0
+  fi
+
   ps_pause
 }
 

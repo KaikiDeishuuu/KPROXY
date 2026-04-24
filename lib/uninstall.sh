@@ -428,6 +428,7 @@ ps_lifecycle_uninstall_purge() {
   done
 
   ps_lifecycle_print_summary "uninstall --purge"
+  ps_request_session_termination "已完成完全清理，当前会话将立即退出。"
 }
 
 ps_lifecycle_uninstall() {

@@ -45,6 +45,8 @@ PS_SINGBOX_BIN="${PS_BIN_DIR}/sing-box"
 PS_INSTALL_LOG="${PS_LOG_DIR}/install.log"
 PS_DEBUG="${PS_DEBUG:-0}"
 PS_LOG_TERMINAL_ONLY="${PS_LOG_TERMINAL_ONLY:-0}"
+PS_SESSION_TERMINATE_AFTER_ACTION="${PS_SESSION_TERMINATE_AFTER_ACTION:-0}"
+PS_SESSION_TERMINATE_REASON="${PS_SESSION_TERMINATE_REASON:-}"
 
 ps_now_iso() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -111,6 +113,12 @@ ps_confirm() {
   fi
 
   [[ "${answer}" =~ ^[Yy]$ ]]
+}
+
+ps_request_session_termination() {
+  local reason="${1:-}"
+  PS_SESSION_TERMINATE_AFTER_ACTION="1"
+  PS_SESSION_TERMINATE_REASON="${reason}"
 }
 
 ps_command_exists() {
